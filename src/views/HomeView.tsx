@@ -33,6 +33,7 @@ interface HomeViewProps {
   onEmailKeyDown: (e: React.KeyboardEvent) => void;
   onSendEmails: () => void;
   onAiRewrite: (instruction: string) => Promise<void>;
+  onUpdateActionItems: (actionItems: ProcessResult["minutes"]["action_items"]) => Promise<void>;
   isAiRewriting: boolean;
   calendarMeetings: CalendarMeeting[];
   pastMeetings: StoredMeeting[];
@@ -72,6 +73,7 @@ export function HomeView({
   participants, emailInput, emailSent, isSending, sendError, setEmailInput,
   onStart, onStop, onReset, onAddParticipant, onRemoveParticipant, onEmailKeyDown, onSendEmails,
   onAiRewrite, isAiRewriting,
+  onUpdateActionItems,
   calendarMeetings, pastMeetings, user, showSystemAudioHint,
   isAtaConfirmed, isConfirmingAta, onConfirmAta
 }: HomeViewProps) {
@@ -130,7 +132,9 @@ export function HomeView({
               ataText={ataText}
               setAtaText={setAtaText}
               transcriptionText={transcriptionText}
+              participants={participants}
               onAiRewrite={onAiRewrite}
+              onUpdateActionItems={onUpdateActionItems}
               isAiRewriting={isAiRewriting}
               isAtaConfirmed={isAtaConfirmed}
               isConfirmingAta={isConfirmingAta}
