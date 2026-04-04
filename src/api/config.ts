@@ -31,25 +31,38 @@ const apiBaseUrl = normalizedConfiguredUrl.endsWith(API_VERSION_PREFIX)
 export const API_URL = `${apiBaseUrl}${API_VERSION_PREFIX}`;
 
 export const API_ROUTES = {
-  meetings: {
-    process: "/meetings/process",
-    rewrite: "/meetings/rewrite",
-    sendMinutes: "/meetings/send-minutes",
-    extractActions: "/meetings/extract-actions",
-  },
   users: {
-    resolve: "/users/resolve",
-    meetings: (email: string) => `/users/${encodeURIComponent(email)}/meetings`,
+    me: "/me",
+  },
+  calendar: {
+    events: "/calendar/events",
+  },
+  meetings: {
+    list: "/meetings",
+    create: "/meetings",
+    get: (id: string) => `/meetings/${id}`,
+    updateTitle: (id: string) => `/meetings/${id}`,
+    addParticipant: (id: string) => `/meetings/${id}/participants`,
+    removeParticipant: (id: string, participantId: string) => `/meetings/${id}/participants/${participantId}`,
+    startRecording: (id: string) => `/meetings/${id}/recording/start`,
+  },
+  transcription: {
+    upload: (id: string) => `/meetings/${id}/transcription`,
+    get: (id: string) => `/meetings/${id}/transcription`,
+  },
+  minutes: {
+    get: (id: string) => `/meetings/${id}/minutes`,
+    edit: (id: string) => `/meetings/${id}/minutes`,
+    confirm: (id: string) => `/meetings/${id}/minutes/confirm`,
+    distribute: (id: string) => `/meetings/${id}/minutes/distribute`,
+  },
+  notes: {
+    get: (id: string) => `/meetings/${id}/notes`,
+    upsert: (id: string) => `/meetings/${id}/notes`,
   },
   actions: {
-    list: "/actions",
-    create: "/actions",
-    get: (id: string) => `/actions/${id}`,
-    update: (id: string) => `/actions/${id}`,
-    delete: (id: string) => `/actions/${id}`,
-    attachments: (id: string) => `/actions/${id}/attachments`,
-    reminders: (id: string) => `/actions/${id}/reminders`,
-    history: (id: string) => `/actions/${id}/history`,
-    comments: (id: string) => `/actions/${id}/comments`,
+    assigned: "/actions/assigned",
+    organized: "/actions/organized",
+    updateStatus: (id: string) => `/actions/${id}/status`,
   },
 } as const;
