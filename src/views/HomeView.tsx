@@ -4,7 +4,7 @@ import { Icon } from "../components/Icon";
 import { RecordingPanel } from "../components/RecordingPanel";
 import { TabsPanel } from "../components/TabsPanel";
 import { ParticipantsPanel } from "../components/ParticipantsPanel";
-import type { AppState, ProcessResult, Participant, StoredMeeting, CalendarMeeting, SessionUser, PendingAction } from "../types";
+import type { AppState, ProcessResult, Participant, StoredMeeting, CalendarMeeting, SessionUser } from "../types";
 
 interface HomeViewProps {
   appState: AppState;
@@ -41,9 +41,6 @@ interface HomeViewProps {
   isAtaConfirmed: boolean;
   isConfirmingAta: boolean;
   onConfirmAta: () => Promise<void>;
-  pendingActions: PendingAction[] | null;
-  setPendingActions: (acts: PendingAction[] | null) => void;
-  onApproveActions: (approvedActions: PendingAction[]) => Promise<void>;
 }
 
 const ROOM_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
@@ -76,8 +73,7 @@ export function HomeView({
   onStart, onStop, onReset, onAddParticipant, onRemoveParticipant, onEmailKeyDown, onSendEmails,
   onAiRewrite, isAiRewriting,
   calendarMeetings, pastMeetings, user, showSystemAudioHint,
-  isAtaConfirmed, isConfirmingAta, onConfirmAta,
-  pendingActions, setPendingActions, onApproveActions
+  isAtaConfirmed, isConfirmingAta, onConfirmAta
 }: HomeViewProps) {
   const [agendaModal, setAgendaModal] = useState<CalendarMeeting | null>(null);
 
@@ -172,119 +168,8 @@ export function HomeView({
                   cursor: isConfirmingAta ? "not-allowed" : "pointer",
                 }}
               >
-                {isConfirmingAta ? "Verificando..." : "Revisar e Gerar Ações"}
+                {isConfirmingAta ? "Confirmando..." : "Confirmar Ata"}
               </button>
-            </div>
-          )}
-
-          {pendingActions && (
-            <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(20,22,22,0.6)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <div style={{ width: 600, maxHeight: "85vh", background: C.white, borderRadius: 20, boxShadow: "0 24px 64px rgba(0,0,0,0.18)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                <div style={{ padding: "20px 24px", borderBottom: `1px solid ${C.creamDark}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <div>
-                    <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: C.dark }}>Revisar Ações Extraídas</h2>
-                    <p style={{ fontSize: 13, color: C.grayLight, margin: "4px 0 0" }}>Confirme os responsáveis antes de salvar no Kanban.</p>
-                  </div>
-                  <button onClick={() => setPendingActions(null)} style={{ background: "transparent", border: "none", cursor: "pointer" }}>
-                    <Icon name="x" size={20} color={C.grayLight} />
-                  </button>
-                </div>
-
-                <div style={{ padding: "20px 24px", overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: 16 }}>
-                  {pendingActions.length === 0 ? (
-                    <div style={{ textAlign: "center", padding: "40px 0" }}>
-                      <Icon name="check" size={32} color={C.green} />
-                      <h3 style={{ fontSize: 16, color: C.dark, margin: "12px 0 4px" }}>Nenhuma ação identificada!</h3>
-                      <p style={{ fontSize: 13, color: C.grayLight, margin: 0 }}>Você deseja confirmar o fechamento da ata sem gerar ações?</p>
-                    </div>
-                  ) : (
-                    pendingActions.map((act, idx) => {
-                      const isParticipant = participants.some(p => p.email === act.responsibleEmail);
-                      
-                      return (
-                        <div key={act.id} style={{ padding: 16, borderRadius: 12, border: `1px solid ${C.creamDark}`, background: C.bg }}>
-                          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                            {/* Summary / Title */}
-                            <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                              <Icon name="doc" size={16} color={C.orange} />
-                              <input 
-                                value={act.title} 
-                                onChange={(e) => {
-                                  const arr = [...pendingActions!];
-                                  arr[idx].title = e.target.value;
-                                  setPendingActions(arr);
-                                }}
-                                style={{ flex: 1, border: "none", background: "transparent", fontSize: 14, fontWeight: 600, color: C.dark, outline: "none", fontFamily: "inherit" }}
-                              />
-                            </div>
-                            
-                            {/* Responsible assignment */}
-                            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4 }}>
-                              <span style={{ fontSize: 12, color: C.grayLight, width: 75 }}>Responsável:</span>
-                              <input 
-                                value={act.responsibleEmail}
-                                onChange={(e) => {
-                                  const arr = [...pendingActions!];
-                                  arr[idx].responsibleEmail = e.target.value;
-                                  setPendingActions(arr);
-                                }}
-                                placeholder="E-mail do responsável..."
-                                style={{ flex: 1, fontSize: 13, padding: "6px 12px", borderRadius: 6, border: `1px solid ${C.creamDark}`, outline: "none" }}
-                              />
-                              {!isParticipant && act.responsibleEmail.includes("@") && (
-                                <button
-                                  onClick={() => {
-                                    setEmailInput(act.responsibleEmail);
-                                    onAddParticipant(); 
-                                  }}
-                                  title="Adicionar à lista de participantes da Ata"
-                                  style={{ width: 26, height: 26, borderRadius: 6, background: C.green, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: "0 2px 6px rgba(46,170,92,0.3)" }}
-                                >
-                                  <Icon name="plus" size={14} color={C.white} />
-                                </button>
-                              )}
-                            </div>
-                            {act.rawResponsible && (
-                              <div style={{ fontSize: 11, color: C.grayLighter, paddingLeft: 85 }}>Extraído como: {act.rawResponsible}</div>
-                            )}
-                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                              <span style={{ fontSize: 12, color: C.grayLight, width: 75 }}>Prazo:</span>
-                              <input 
-                                value={act.deadline}
-                                onChange={(e) => {
-                                  const arr = [...pendingActions!];
-                                  arr[idx].deadline = e.target.value;
-                                  setPendingActions(arr);
-                                }}
-                                placeholder="Ex: Amanhã, 10/12/2026..."
-                                style={{ flex: 1, fontSize: 13, padding: "6px 12px", borderRadius: 6, border: `1px solid ${C.creamDark}`, outline: "none" }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-
-                <div style={{ padding: "16px 24px", borderTop: `1px solid ${C.creamDark}`, background: C.bg, display: "flex", justifyContent: "flex-end", gap: 12 }}>
-                  <button 
-                    onClick={() => setPendingActions(null)}
-                    style={{ padding: "10px 18px", borderRadius: 8, background: "transparent", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, color: C.grayLight }}
-                  >
-                    Voltar
-                  </button>
-                  <button 
-                    onClick={() => onApproveActions(pendingActions!)}
-                    disabled={isConfirmingAta}
-                    style={{
-                      padding: "10px 24px", borderRadius: 8, background: C.green, color: C.white, border: "none", fontSize: 14, fontWeight: 700, cursor: isConfirmingAta ? "not-allowed" : "pointer", boxShadow: "0 4px 12px rgba(46,170,92,0.3)", opacity: isConfirmingAta ? 0.7 : 1
-                    }}
-                  >
-                    {isConfirmingAta ? "Salvando..." : pendingActions!.length === 0 ? "Confirmar Ata" : "Aprovar Ações e Trancar Ata"}
-                  </button>
-                </div>
-              </div>
             </div>
           )}
         </div>

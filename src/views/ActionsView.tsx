@@ -5,10 +5,14 @@ import { C } from "../constants/colors";
 import { Icon } from "../components/Icon";
 import { ActionDetailModal } from "../components/ActionDetailModal";
 import { useAppServices } from "../services";
+import { isApiError } from "../services/errors";
+import { getApiErrorMessage } from "../services/apiErrorMessage";
+import { formatDateToBrDate } from "../utils/dateFormat";
 import type { Action, ActionStatus } from "../domain/actions";
 
 interface ActionsViewProps {
   userEmail?: string;
+  refreshToken?: number;
 }
 
 function DroppableColumn({ col, children }: { col: { id: ActionStatus; title: string; color: string }; children: React.ReactNode }) {
@@ -23,21 +27,37 @@ function DroppableColumn({ col, children }: { col: { id: ActionStatus; title: st
   );
 }
 
-function DraggableCard({ action, children }: { action: Action; children: React.ReactNode }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: action.id });
+function DraggableCard({ action, disabled, children }: { action: Action; disabled?: boolean; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: action.id,
+    disabled,
+  });
   const style = {
     transform: CSS.Translate.toString(transform),
     opacity: isDragging ? 0.5 : 1,
-    cursor: "grab",
+    cursor: disabled ? "default" : "grab",
   };
   return (
-    <div ref={setNodeRef} style={style} {...listeners} {...attributes}>
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...(disabled ? {} : listeners)}
+      {...(disabled ? {} : attributes)}
+    >
       {children}
     </div>
   );
 }
 
-export function ActionsView({ userEmail }: ActionsViewProps) {
+function isActionOwnedByUser(action: Action, userEmail?: string): boolean {
+  if (!userEmail || !action.responsible_email) {
+    return false;
+  }
+
+  return action.responsible_email.toLowerCase() === userEmail.toLowerCase();
+}
+
+export function ActionsView({ userEmail, refreshToken = 0 }: ActionsViewProps) {
   const { actions: actionsService } = useAppServices();
   const [actions, setActions] = useState<Action[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,12 +72,11 @@ export function ActionsView({ userEmail }: ActionsViewProps) {
     try {
       setLoading(true);
       setError(null);
-      const params: Record<string, string> = {};
-      if (userEmail) params.viewer_email = userEmail;
-      const data = await actionsService.fetchActions(params);
+      void userEmail;
+      const data = await actionsService.fetchActionsBoard();
       setActions(data || []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao carregar ações");
+      setError(getApiErrorMessage(err, "Erro ao carregar ações"));
     } finally {
       setLoading(false);
     }
@@ -65,22 +84,41 @@ export function ActionsView({ userEmail }: ActionsViewProps) {
 
   useEffect(() => {
     void loadActions();
-  }, [loadActions]);
+  }, [loadActions, refreshToken]);
 
-  const handleStatusChange = useCallback(async (id: string, newStatus: ActionStatus) => {
+  const handleStatusChange = useCallback(async (id: string, newStatus: ActionStatus, action?: Action) => {
+    const targetAction = action ?? actions.find((item) => item.id === id);
+    if (!targetAction) {
+      return;
+    }
+
+    if (!isActionOwnedByUser(targetAction, userEmail)) {
+      setError("Apenas o responsável pode atualizar o status desta ação.");
+      return;
+    }
+
     try {
+      setError(null);
       setActions(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a));
-      await actionsService.setActionStatus(id, newStatus);
+      await actionsService.updateActionStatus(id, newStatus);
     } catch (err) {
-      console.error(err);
+      if (isApiError(err) && err.status === 404) {
+        setError("Ação não encontrada ou sem permissão para atualização.");
+      } else {
+        setError(getApiErrorMessage(err, "Erro ao atualizar status da ação."));
+      }
       void loadActions();
     }
-  }, [actionsService, loadActions]);
+  }, [actions, actionsService, loadActions, userEmail]);
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (over && active.id !== over.id) {
-      handleStatusChange(String(active.id), over.id as ActionStatus);
+      const draggedAction = actions.find((item) => item.id === String(active.id));
+      if (!draggedAction) {
+        return;
+      }
+      handleStatusChange(String(active.id), over.id as ActionStatus, draggedAction);
     }
   };
 
@@ -89,17 +127,6 @@ export function ActionsView({ userEmail }: ActionsViewProps) {
     { id: "in_progress", title: "Em Andamento", color: "#3B82F6" },
     { id: "done", title: "Concluídos", color: C.green },
   ];
-
-  const getStatusBg = (status: ActionStatus) => {
-    if (status === "pending") return C.orangeLight;
-    if (status === "in_progress") return "#DBEAFE";
-    if (status === "done") return "#D1FAE5";
-    if (status === "late") return "#FEE2E2";
-    return C.creamDark;
-  };
-
-  // suppress unused warning
-  void getStatusBg;
 
   return (
     <div style={{ padding: "24px", height: "100%", display: "flex", flexDirection: "column" }}>
@@ -134,10 +161,7 @@ export function ActionsView({ userEmail }: ActionsViewProps) {
         <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
           <div style={{ display: "flex", gap: 24, flex: 1, overflowX: "auto", paddingBottom: 16 }}>
             {columns.map(col => {
-              const colActions = actions.filter(a =>
-                a.status === col.id ||
-                (col.id === "pending" && (a.effective_status === "late" || a.status === "canceled"))
-              );
+              const colActions = actions.filter((a) => a.status === col.id);
 
               return (
                 <DroppableColumn key={col.id} col={col}>
@@ -156,7 +180,11 @@ export function ActionsView({ userEmail }: ActionsViewProps) {
 
                   <div style={{ display: "flex", flexDirection: "column", gap: 12, flex: 1, overflowY: "auto" }}>
                     {colActions.map(action => (
-                      <DraggableCard key={action.id} action={action}>
+                      <DraggableCard
+                        key={action.id}
+                        action={action}
+                        disabled={!isActionOwnedByUser(action, userEmail)}
+                      >
                         <div
                           onClick={() => setSelectedAction(action)}
                           style={{
@@ -176,7 +204,7 @@ export function ActionsView({ userEmail }: ActionsViewProps) {
                           <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 4 }}>
                             <div style={{ fontSize: 11, color: C.grayLight, display: "flex", alignItems: "center", gap: 4 }}>
                               <Icon name="calendar" size={12} />
-                              {action.deadline ? new Date(action.deadline).toLocaleDateString() : 'Sem prazo'}
+                              {action.deadline ? formatDateToBrDate(action.deadline) : "Sem prazo"}
                             </div>
                             <div style={{ fontSize: 11, color: C.grayLight, display: "flex", alignItems: "center", gap: 4 }}>
                               <Icon name="users" size={12} />
@@ -188,23 +216,28 @@ export function ActionsView({ userEmail }: ActionsViewProps) {
                             onClick={e => e.stopPropagation()}
                             style={{ display: "flex", justifyContent: "flex-end", marginTop: 8, gap: 8 }}
                           >
-                            {col.id !== "pending" && (
+                            {!isActionOwnedByUser(action, userEmail) ? (
+                              <span style={{ fontSize: 11, color: C.grayLighter, fontWeight: 600 }}>
+                                Somente responsável
+                              </span>
+                            ) : null}
+                            {col.id !== "pending" && isActionOwnedByUser(action, userEmail) && (
                               <button
-                                onClick={e => { e.stopPropagation(); handleStatusChange(action.id, "pending"); }}
+                                onClick={e => { e.stopPropagation(); handleStatusChange(action.id, "pending", action); }}
                                 style={{ fontSize: 11, padding: "4px 8px", borderRadius: 4, background: C.cream, border: "none", cursor: "pointer", color: C.gray }}>
                                 Mover p/ Pendente
                               </button>
                             )}
-                            {col.id !== "in_progress" && (
+                            {col.id !== "in_progress" && isActionOwnedByUser(action, userEmail) && (
                               <button
-                                onClick={e => { e.stopPropagation(); handleStatusChange(action.id, "in_progress"); }}
+                                onClick={e => { e.stopPropagation(); handleStatusChange(action.id, "in_progress", action); }}
                                 style={{ fontSize: 11, padding: "4px 8px", borderRadius: 4, background: "#DBEAFE", border: "none", cursor: "pointer", color: "#1D4ED8" }}>
                                 Em Progresso
                               </button>
                             )}
-                            {col.id !== "done" && (
+                            {col.id !== "done" && isActionOwnedByUser(action, userEmail) && (
                               <button
-                                onClick={e => { e.stopPropagation(); handleStatusChange(action.id, "done"); }}
+                                onClick={e => { e.stopPropagation(); handleStatusChange(action.id, "done", action); }}
                                 style={{ fontSize: 11, padding: "4px 8px", borderRadius: 4, background: "#D1FAE5", border: "none", cursor: "pointer", color: "#065F46" }}>
                                 Concluir
                               </button>

@@ -43,7 +43,7 @@ export function ParticipantsPanel({
           <div>
             <span style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>Participantes</span>
             <div style={{ fontSize: 12, color: C.grayLight, marginTop: 1 }}>
-              Adicione os e-mails dos participantes para enviar a ata
+              Reenvio de ata confirmada para os participantes
             </div>
           </div>
         </div>

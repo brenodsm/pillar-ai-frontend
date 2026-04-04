@@ -41,7 +41,10 @@ export function CalendarMeetingsView({
     setLoading(true);
     setError(null);
     try {
-      const list = await usersService.getUserMeetings(user.email);
+      void user.email;
+      const startDateTime = new Date().toISOString();
+      const endDateTime = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      const list = await usersService.getCalendarEvents(startDateTime, endDateTime);
       setMeetings(list);
       onMeetingsLoaded(list);
     } catch {

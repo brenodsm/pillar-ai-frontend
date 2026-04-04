@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { C } from "../constants/colors";
 import { Icon } from "./Icon";
 import type { AppState, ProcessResult } from "../types";
@@ -20,11 +20,211 @@ interface TabsPanelProps {
   onConfirmAta: () => Promise<void>;
 }
 
+const ATA_HEADING_LABELS: Record<string, string> = {
+  "ata de reunião": "Ata de reunião",
+  "ata da reunião": "Ata da reunião",
+  resumo: "Resumo",
+  "tópicos discutidos": "Tópicos discutidos",
+  "topicos discutidos": "Tópicos discutidos",
+  "ações definidas": "Ações definidas",
+  "acoes definidas": "Ações definidas",
+  "decisões": "Decisões",
+  decisoes: "Decisões",
+  "próximos passos": "Próximos passos",
+  "proximos passos": "Próximos passos",
+};
+
+function normalizeHeading(text: string): string {
+  return text.trim().replace(/\s+/g, " ").toLocaleLowerCase("pt-BR");
+}
+
+function renderAtaText(ataText: string) {
+  const lines = ataText.split("\n");
+  const nodes: React.ReactNode[] = [];
+  let activeSection = "";
+
+  let index = 0;
+  while (index < lines.length) {
+    const line = lines[index];
+    const trimmedLine = line.trim();
+    const normalizedHeading = normalizeHeading(trimmedLine);
+    const headingLabel = ATA_HEADING_LABELS[normalizedHeading];
+
+    if (!trimmedLine) {
+      nodes.push(<div key={`empty-${index}`} style={{ height: 8 }} />);
+      index += 1;
+      continue;
+    }
+
+    if (headingLabel && (normalizedHeading === "ata de reunião" || normalizedHeading === "ata da reunião")) {
+      activeSection = normalizedHeading;
+      nodes.push(
+        <h3
+          key={`title-${index}`}
+          style={{
+            fontSize: 18,
+            fontWeight: 700,
+            lineHeight: 1.25,
+            color: C.dark,
+            margin: "0 0 12px",
+          }}
+        >
+          {headingLabel}
+        </h3>,
+      );
+      index += 1;
+      continue;
+    }
+
+    if (headingLabel) {
+      activeSection = normalizedHeading;
+      nodes.push(
+        <h3
+          key={`section-${index}`}
+          style={{
+            fontSize: 15,
+            fontWeight: 700,
+            lineHeight: 1.35,
+            color: C.dark,
+            margin: "10px 0 8px",
+          }}
+        >
+          {headingLabel}
+        </h3>,
+      );
+      index += 1;
+      continue;
+    }
+
+    if (/^━━━━━━━━/.test(trimmedLine)) {
+      nodes.push(
+        <div
+          key={`divider-${index}`}
+          style={{
+            width: "100%",
+            maxWidth: 520,
+            height: 2,
+            borderRadius: 99,
+            background: C.dark,
+            opacity: 0.75,
+            margin: "10px 0 14px",
+          }}
+        />,
+      );
+      index += 1;
+      continue;
+    }
+
+    if (/^(Reunião|Data|Participantes):/.test(trimmedLine)) {
+      nodes.push(
+        <div
+          key={`meta-${index}`}
+          style={{
+            fontSize: 14.5,
+            lineHeight: 1.45,
+            color: C.dark,
+            whiteSpace: "pre-wrap",
+            margin: "0 0 4px",
+          }}
+        >
+          {line}
+        </div>,
+      );
+      index += 1;
+      continue;
+    }
+
+    const isActionsSection = activeSection === "ações definidas" || activeSection === "acoes definidas";
+    if (isActionsSection && /^•\s*Responsável:/i.test(trimmedLine)) {
+      const responsible = trimmedLine.replace(/^•\s*Responsável:\s*/i, "").trim();
+      let description = "";
+      let deadline = "";
+      let cursor = index + 1;
+
+      while (cursor < lines.length) {
+        const candidate = lines[cursor].trim();
+        if (!candidate) {
+          break;
+        }
+        if (/^•\s*Responsável:/i.test(candidate) || /^━━━━━━━━/.test(candidate)) {
+          break;
+        }
+        if (ATA_HEADING_LABELS[normalizeHeading(candidate)]) {
+          break;
+        }
+
+        if (/^Ação:/i.test(candidate)) {
+          description = candidate.replace(/^Ação:\s*/i, "").trim();
+        }
+
+        if (/^Prazo:/i.test(candidate)) {
+          deadline = candidate.replace(/^Prazo:\s*/i, "").trim();
+        }
+
+        cursor += 1;
+      }
+
+      nodes.push(
+        <div
+          key={`action-${index}`}
+          style={{
+            border: `1px solid ${C.creamDark}`,
+            background: C.white,
+            borderRadius: 10,
+            padding: "12px 14px",
+            margin: "0 0 10px",
+          }}
+        >
+          <div style={{ fontSize: 12, color: C.grayLight, fontWeight: 600, marginBottom: 3 }}>Responsável</div>
+          <div style={{ fontSize: 14, color: C.dark, fontWeight: 600 }}>{responsible || "Sem responsável"}</div>
+          {description ? (
+            <>
+              <div style={{ fontSize: 12, color: C.grayLight, fontWeight: 600, marginTop: 10, marginBottom: 3 }}>Ação</div>
+              <div style={{ fontSize: 14, color: C.dark, lineHeight: 1.5 }}>{description}</div>
+            </>
+          ) : null}
+          {deadline ? (
+            <div style={{ fontSize: 12.5, color: C.gray, marginTop: 10 }}>
+              Prazo: <strong>{deadline}</strong>
+            </div>
+          ) : null}
+        </div>,
+      );
+
+      index = cursor;
+      continue;
+    }
+
+    nodes.push(
+      <div
+        key={`line-${index}`}
+        style={{
+          fontSize: 14.5,
+          lineHeight: 1.5,
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+          margin: "0 0 6px",
+        }}
+      >
+        {line}
+      </div>,
+    );
+    index += 1;
+  }
+
+  return (
+    <div style={{ fontFamily: "'DM Sans', sans-serif", color: C.dark }}>
+      {nodes}
+    </div>
+  );
+}
+
 export function TabsPanel({ activeTab, setActiveTab, notes, setNotes, appState, result, ataText, setAtaText, transcriptionText, onAiRewrite, isAiRewriting, isAtaConfirmed, isConfirmingAta, onConfirmAta }: TabsPanelProps) {
-  const [isEditingAta, setIsEditingAta] = useState(false);
   const [showAiInput, setShowAiInput] = useState(false);
   const [aiInstruction, setAiInstruction] = useState("");
-  const originalAtaRef = useRef("");
+  void setAtaText;
+  void isConfirmingAta;
+  void onConfirmAta;
   return (
     <div style={{
       background: C.white, borderRadius: 16, overflow: "hidden",
@@ -116,92 +316,62 @@ export function TabsPanel({ activeTab, setActiveTab, notes, setNotes, appState, 
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <Icon name="doc" size={18} color={C.orange} />
                 <span style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>Ata da Reunião</span>
+                {isAtaConfirmed && (
+                  <span style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: C.green,
+                    background: "rgba(46,170,92,0.12)",
+                    padding: "2px 8px",
+                    borderRadius: 6,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.04em",
+                  }}
+                  >
+                    Confirmada
+                  </span>
+                )}
               </div>
               <div style={{ display: "flex", gap: 8 }}>
-                {isEditingAta ? (
-                  <>
-                    <button
-                      onClick={() => {
-                        setAtaText(originalAtaRef.current);
-                        setIsEditingAta(false);
-                      }}
-                      style={{
-                        padding: "7px 16px", borderRadius: 8, border: `1px solid ${C.creamDark}`,
-                        background: C.white, cursor: "pointer", fontSize: 12, fontWeight: 600,
-                        fontFamily: "inherit", color: C.dark, transition: "all 0.2s",
-                      }}
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      onClick={() => setIsEditingAta(false)}
-                      style={{
-                        padding: "7px 16px", borderRadius: 8, border: `1px solid ${C.orange}`,
-                        background: C.orange, cursor: "pointer", fontSize: 12, fontWeight: 600,
-                        fontFamily: "inherit", color: C.white, transition: "all 0.2s",
-                      }}
-                    >
-                      Salvar
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    {!isAtaConfirmed && (
-                      <button
-                        onClick={() => {
-                          originalAtaRef.current = ataText;
-                          setIsEditingAta(true);
-                        }}
-                        style={{
-                          padding: "7px 16px", borderRadius: 8, border: `1px solid ${C.creamDark}`,
-                          background: C.white, cursor: "pointer", fontSize: 12, fontWeight: 600,
-                          fontFamily: "inherit", color: C.dark, transition: "all 0.2s",
-                        }}
-                      >
-                        Editar
-                      </button>
-                    )}
-                    {!isAtaConfirmed && (
-                      <button
-                        onClick={() => {
-                          setShowAiInput(!showAiInput);
-                          setAiInstruction("");
-                        }}
-                        disabled={isAiRewriting}
-                        style={{
-                          padding: "7px 16px", borderRadius: 8,
-                          border: `1px solid ${C.orange}`,
-                          background: showAiInput ? C.orange : `linear-gradient(135deg, ${C.orange}, ${C.orangeDark})`,
-                          cursor: isAiRewriting ? "not-allowed" : "pointer",
-                          fontSize: 12, fontWeight: 600,
-                          fontFamily: "inherit",
-                          color: C.white,
-                          transition: "all 0.2s",
-                          display: "inline-flex", alignItems: "center", gap: 6,
-                          boxShadow: `0 2px 8px rgba(255,145,20,0.3)`,
-                        }}
-                      >
-                        <Icon name="sparkles" size={14} color={C.white} />
-                        Editar com AI
-                      </button>
-                    )}
-                    <button
-                      onClick={() => navigator.clipboard.writeText(ataText)}
-                      style={{
-                        padding: "7px 16px", borderRadius: 8, border: `1px solid ${C.creamDark}`,
-                        background: C.white, cursor: "pointer", fontSize: 12, fontWeight: 600,
-                        fontFamily: "inherit", color: C.dark, transition: "all 0.2s",
-                      }}
-                    >
-                      Copiar
-                    </button>
-                  </>
+                {!isAtaConfirmed && (
+                  <button
+                    onClick={() => {
+                      setShowAiInput(!showAiInput);
+                      setAiInstruction("");
+                    }}
+                    disabled={isAiRewriting}
+                    style={{
+                      padding: "7px 16px", borderRadius: 8,
+                      border: `1px solid ${C.orange}`,
+                      background: showAiInput ? C.orange : `linear-gradient(135deg, ${C.orange}, ${C.orangeDark})`,
+                      cursor: isAiRewriting ? "not-allowed" : "pointer",
+                      fontSize: 12, fontWeight: 600,
+                      fontFamily: "inherit",
+                      color: C.white,
+                      transition: "all 0.2s",
+                      display: "inline-flex", alignItems: "center", gap: 6,
+                      boxShadow: `0 2px 8px rgba(255,145,20,0.3)`,
+                    }}
+                  >
+                    <Icon name="sparkles" size={14} color={C.white} />
+                    Editar Ata
+                  </button>
                 )}
+                <button
+                  onClick={() => navigator.clipboard.writeText(ataText)}
+                  style={{
+                    padding: "7px 16px", borderRadius: 8, border: `1px solid ${C.creamDark}`,
+                    background: C.white, cursor: "pointer", fontSize: 12, fontWeight: 600,
+                    fontFamily: "inherit", color: C.dark, transition: "all 0.2s",
+                  }}
+                >
+                  Copiar
+                </button>
               </div>
             </div>
 
             {/* AI Edit Input */}
-            {showAiInput && !isEditingAta && (
+            {showAiInput && (
               <div style={{
                 background: `linear-gradient(135deg, rgba(255,145,20,0.04), rgba(255,200,90,0.06))`,
                 border: `1px solid rgba(255,145,20,0.25)`,
@@ -310,22 +480,8 @@ export function TabsPanel({ activeTab, setActiveTab, notes, setNotes, appState, 
                 </div>
               </div>
             )}
-            <div style={{ background: C.bg, borderRadius: 12, padding: "28px 32px", border: `1px solid ${isEditingAta ? C.orange : C.creamDark}`, transition: "border-color 0.2s" }}>
-              {isEditingAta ? (
-                <textarea
-                  value={ataText}
-                  onChange={(e) => setAtaText(e.target.value)}
-                  style={{
-                    width: "100%", minHeight: 400, fontFamily: "'DM Sans', sans-serif",
-                    fontSize: 13.5, lineHeight: 1.85, color: C.dark, background: "transparent",
-                    border: "none", outline: "none", resize: "vertical", boxSizing: "border-box",
-                  }}
-                />
-              ) : (
-                <pre style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13.5, lineHeight: 1.85, color: C.dark, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                  {ataText}
-                </pre>
-              )}
+            <div style={{ background: C.bg, borderRadius: 12, padding: "28px 32px", border: `1px solid ${C.creamDark}`, transition: "border-color 0.2s" }}>
+              {renderAtaText(ataText)}
             </div>
           </div>
         )}

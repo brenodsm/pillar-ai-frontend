@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { C } from "./constants/colors";
 import { useAppServices } from "./services";
+import { isApiError } from "./services/errors";
+import { getApiErrorMessage } from "./services/apiErrorMessage";
 import { formatMinutesToAta, formatTranscription } from "./utils/formatters";
+import { mapMinutesResponseToMinutes, toProcessResultViewModel } from "./api/mappers/meetingMapper";
 import { Sidebar } from "./components/Sidebar";
 import { Header } from "./components/Header";
 import { HomeView } from "./views/HomeView";
@@ -10,7 +13,8 @@ import { SettingsView } from "./views/SettingsView";
 import { CalendarView } from "./views/CalendarView";
 import { ActionsView } from "./views/ActionsView";
 import { MeetingDetailModal } from "./components/MeetingDetailModal";
-import type { AppState, ProcessResult, StoredMeeting, Participant, CalendarMeeting, SessionUser, PendingAction } from "./types";
+import type { AppState, ProcessResult, StoredMeeting, Participant, CalendarMeeting, SessionUser } from "./types";
+import type { ParticipantResponse } from "./api/types/swagger";
 
 const DEFAULT_OWNER: Participant = {
   name: "Breno Moreira",
@@ -18,8 +22,22 @@ const DEFAULT_OWNER: Participant = {
   isOwner: true,
 };
 
+interface MeetingSnapshot {
+  title: string;
+  scheduledAt?: string;
+  createdAt: string;
+  participants: ParticipantResponse[];
+}
+
 export default function PillarAI({ onLogout, user }: { onLogout?: () => void; user?: SessionUser | null }) {
-  const { meetings: meetingsService, actions: actionsService } = useAppServices();
+  const {
+    users: usersService,
+    meetings: meetingsService,
+    transcription: transcriptionService,
+    minutes: minutesService,
+    notes: notesService,
+    actions: actionsService,
+  } = useAppServices();
   const [sidebarView, setSidebarView] = useState("home");
   const [appState, setAppState] = useState<AppState>("idle");
   const [startTime, setStartTime] = useState<number | null>(null);
@@ -50,9 +68,11 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
   const [showSystemAudioHint, setShowSystemAudioHint] = useState(false);
   const [isAtaConfirmed, setIsAtaConfirmed] = useState(false);
   const [isConfirmingAta, setIsConfirmingAta] = useState(false);
-  const [pendingActions, setPendingActions] = useState<PendingAction[] | null>(null);
   const [currentMeetingId, setCurrentMeetingId] = useState<string | null>(null);
   const [currentMinutesId, setCurrentMinutesId] = useState<string | null>(null);
+  const [currentMeetingSnapshot, setCurrentMeetingSnapshot] = useState<MeetingSnapshot | null>(null);
+  const [selectedCalendarEventId, setSelectedCalendarEventId] = useState<string | null>(null);
+  const [actionsRefreshToken, setActionsRefreshToken] = useState(0);
 
   const owner: Participant = useMemo(
     () => user
@@ -80,10 +100,149 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
   const micStreamRef = useRef<MediaStream | null>(null);
   const systemAudioTrackRef = useRef<MediaStreamTrack | null>(null);
 
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      try {
+        await usersService.getCurrentUser();
+      } catch (err) {
+        if (!mounted) {
+          return;
+        }
+        if (isApiError(err) && err.status === 401) {
+          return;
+        }
+        setError(getApiErrorMessage(err, "Erro ao sincronizar usuário autenticado."));
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [usersService]);
+
+  const applyMeetingMinutesSnapshot = useCallback((
+    meetingId: string,
+    snapshot: MeetingSnapshot,
+    mappedMinutes: ProcessResult["minutes"],
+    minutesId: string,
+    confirmed: boolean,
+  ) => {
+    const nextAtaText = formatMinutesToAta(mappedMinutes);
+
+    setCurrentMeetingSnapshot(snapshot);
+    setResult((prev) => (prev ? { ...prev, meeting_id: meetingId, minutes_id: minutesId, minutes: mappedMinutes } : prev));
+    setCurrentMinutesId(minutesId);
+    setAtaText(nextAtaText);
+    setIsAtaConfirmed(confirmed);
+
+    setPastMeetings((prev) => {
+      const fallbackStoredMeetingId = selectedMeeting?.id ?? prev[0]?.id;
+      return prev.map((meeting) => {
+        const matchesMeetingId = meeting.result.meeting_id === meetingId;
+        const matchesFallback = fallbackStoredMeetingId !== undefined && meeting.id === fallbackStoredMeetingId;
+
+        if (!matchesMeetingId && !matchesFallback) {
+          return meeting;
+        }
+
+        return {
+          ...meeting,
+          hasAta: true,
+          isConfirmed: confirmed,
+          editedAtaText: nextAtaText,
+          result: {
+            ...meeting.result,
+            meeting_id: meetingId,
+            minutes_id: minutesId,
+            minutes: mappedMinutes,
+          },
+        };
+      });
+    });
+  }, [selectedMeeting?.id]);
+
+  const refreshMeetingMinutesState = useCallback(async (meetingId: string) => {
+    const [meeting, minutes] = await Promise.all([
+      meetingsService.getMeetingById(meetingId),
+      minutesService.getMeetingMinutes(meetingId),
+    ]);
+
+    const snapshot: MeetingSnapshot = {
+      title: meeting.title,
+      scheduledAt: meeting.scheduledAt,
+      createdAt: meeting.createdAt,
+      participants: meeting.participants || [],
+    };
+
+    const mappedMinutes = mapMinutesResponseToMinutes(
+      {
+        title: snapshot.title,
+        scheduledAt: snapshot.scheduledAt,
+        createdAt: snapshot.createdAt,
+      },
+      minutes,
+      snapshot.participants,
+    );
+
+    applyMeetingMinutesSnapshot(meeting.id, snapshot, mappedMinutes, minutes.id, minutes.status === "confirmed");
+
+    return { meeting, minutes, mappedMinutes };
+  }, [applyMeetingMinutesSnapshot, meetingsService, minutesService]);
+
+  const syncMeetingParticipantsWithServer = useCallback(async (meetingId: string): Promise<MeetingSnapshot> => {
+    const meeting = await meetingsService.getMeetingById(meetingId);
+    const currentParticipants = meeting.participants || [];
+    const localEmailSet = new Set(
+      participants
+        .map((participant) => participant.email.trim().toLowerCase())
+        .filter(Boolean),
+    );
+    const participantsByEmail = new Map(
+      currentParticipants.map((participant) => [participant.email.trim().toLowerCase(), participant]),
+    );
+
+    const participantsToAdd = participants
+      .map((participant) => participant.email.trim())
+      .filter((email) => email.length > 0)
+      .filter((email) => !participantsByEmail.has(email.toLowerCase()));
+
+    const participantsToRemove = currentParticipants.filter((participant) => {
+      const email = participant.email.trim().toLowerCase();
+      return participant.source !== "organizer" && !localEmailSet.has(email);
+    });
+
+    for (const email of participantsToAdd) {
+      await meetingsService.addMeetingParticipant(meetingId, email);
+    }
+
+    for (const participant of participantsToRemove) {
+      await meetingsService.removeMeetingParticipant(meetingId, participant.id);
+    }
+
+    const refreshedMeeting = participantsToAdd.length > 0 || participantsToRemove.length > 0
+      ? await meetingsService.getMeetingById(meetingId)
+      : meeting;
+
+    return {
+      title: refreshedMeeting.title,
+      scheduledAt: refreshedMeeting.scheduledAt,
+      createdAt: refreshedMeeting.createdAt,
+      participants: refreshedMeeting.participants || [],
+    };
+  }, [meetingsService, participants]);
+
   const startRecording = useCallback(async () => {
     try {
       setError(null);
       setResult(null);
+      setCurrentMeetingId(null);
+      setCurrentMinutesId(null);
+      setCurrentMeetingSnapshot(null);
+      setIsAtaConfirmed(false);
+      setEmailSent(false);
+      setSendError(null);
 
       // 1. Microfone
       const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -161,6 +320,10 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
     });
   }, []);
 
+  const waitFor = useCallback(async (ms: number) => {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }, []);
+
   const handleStop = useCallback(async () => {
     if (startTime) recordingDurationRef.current = Date.now() - startTime;
     setAppState("processing");
@@ -169,11 +332,92 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
     if (!audioBlob) { setAppState("idle"); return; }
 
     try {
-      const data: ProcessResult = await meetingsService.processMeeting(audioBlob, meetingContext, user?.email);
+      const createdMeeting = selectedCalendarEventId
+        ? await meetingsService.createMeetingFromCalendarEvent(selectedCalendarEventId)
+        : await meetingsService.createManualMeeting(
+          meetingContext
+            ? meetingContext.split("\n").find((line) => line.startsWith("Título"))?.replace("Título da reunião: ", "") || "Reunião sem título"
+            : "Reunião sem título",
+          new Date().toISOString(),
+        );
+
+      setCurrentMeetingId(createdMeeting.id);
+      setCurrentMeetingSnapshot({
+        title: createdMeeting.title,
+        scheduledAt: createdMeeting.scheduledAt,
+        createdAt: createdMeeting.createdAt,
+        participants: createdMeeting.participants || [],
+      });
+
+      await meetingsService.startMeetingRecording(createdMeeting.id);
+      await transcriptionService.uploadTranscriptionAudio(createdMeeting.id, audioBlob);
+
+      try {
+        await notesService.upsertMeetingNote(createdMeeting.id, notes);
+      } catch {
+        // Notes persistence should not block transcription/minutes pipeline.
+      }
+
+      let meetingStatus = createdMeeting.status;
+      let attempts = 0;
+      while (meetingStatus !== "done" && attempts < 20) {
+        attempts += 1;
+        const meeting = await meetingsService.getMeetingById(createdMeeting.id);
+        meetingStatus = meeting.status;
+        setCurrentMeetingSnapshot({
+          title: meeting.title,
+          scheduledAt: meeting.scheduledAt,
+          createdAt: meeting.createdAt,
+          participants: meeting.participants || [],
+        });
+        if (meetingStatus === "done") break;
+        await new Promise((resolve) => setTimeout(resolve, Math.min(1000 * attempts, 8000)));
+      }
+
+      if (meetingStatus !== "done") {
+        throw new Error("A reunião ainda está sendo processada. Tente novamente em instantes.");
+      }
+
+      const getTranscriptionWithRetry = async () => {
+        const maxAttempts = 8;
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+          try {
+            return await transcriptionService.getMeetingTranscription(createdMeeting.id);
+          } catch (err) {
+            if (isApiError(err) && (err.status === 404 || err.status === 409) && attempt < maxAttempts) {
+              await waitFor(Math.min(750 * attempt, 4000));
+              continue;
+            }
+            throw err;
+          }
+        }
+        throw new Error("Transcrição ainda não está disponível.");
+      };
+
+      const getMinutesWithRetry = async () => {
+        const maxAttempts = 12;
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+          try {
+            return await minutesService.getMeetingMinutes(createdMeeting.id);
+          } catch (err) {
+            if (isApiError(err) && (err.status === 404 || err.status === 409) && attempt < maxAttempts) {
+              await waitFor(Math.min(1000 * attempt, 5000));
+              continue;
+            }
+            throw err;
+          }
+        }
+        throw new Error("A minuta ainda está sendo gerada. Tente novamente em instantes.");
+      };
+
+      const [transcription, minutes] = await Promise.all([getTranscriptionWithRetry(), getMinutesWithRetry()]);
+
+      const latestMeeting = await meetingsService.getMeetingById(createdMeeting.id);
+      const data: ProcessResult = toProcessResultViewModel(latestMeeting, minutes, transcription);
+
       setResult(data);
-      // Persist meeting/minutes IDs returned by the backend.
-      if (data.meeting_id) setCurrentMeetingId(data.meeting_id);
-      if (data.minutes_id) setCurrentMinutesId(data.minutes_id);
+      setCurrentMeetingId(data.meeting_id ?? null);
+      setCurrentMinutesId(data.minutes_id ?? null);
       setAtaText(formatMinutesToAta(data.minutes));
       setAppState("finished");
       setActiveTab("transcricao");
@@ -190,108 +434,50 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
         duration: durationStr,
         participants: data.minutes.participants.length || 1,
         hasAta: true,
+        isConfirmed: false,
         result: data,
         notes,
       }, ...prev]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro desconhecido");
+      setError(getApiErrorMessage(err, "Erro desconhecido"));
       setAppState("idle");
     }
-  }, [meetingContext, meetingsService, notes, startTime, stopRecording, user?.email]);
+  }, [
+    meetingContext,
+    meetingsService,
+    minutesService,
+    notes,
+    selectedCalendarEventId,
+    startTime,
+    stopRecording,
+    notesService,
+    transcriptionService,
+    waitFor,
+  ]);
 
   const handleConfirmAta = useCallback(async () => {
-    if (!result || !ataText) return;
+    if (!currentMeetingId || !result || !ataText) return;
     setIsConfirmingAta(true);
+    setError(null);
     try {
-      const items = await meetingsService.extractActions(ataText);
-      const newPendingActions: PendingAction[] = [];
-      for (const item of items) {
-        if (!item.description) continue;
-        
-        let resolvedEmail = "";
-        let rawResp = item.responsible || "";
-
-        if (rawResp) {
-          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-          if (emailRegex.test(rawResp)) {
-            resolvedEmail = rawResp;
-          } else {
-            const pMatch = participants.find(p => 
-              p.name.toLowerCase().includes(rawResp.toLowerCase()) || 
-              rawResp.toLowerCase().includes(p.name.toLowerCase())
-            );
-            if (pMatch) {
-              resolvedEmail = pMatch.email;
-            }
-          }
-        }
-
-        const deadlineText = item.deadline || "";
-
-        newPendingActions.push({
-          id: Date.now().toString() + Math.random().toString(),
-          title: item.description,
-          responsibleEmail: resolvedEmail, 
-          rawResponsible: rawResp,
-          deadline: deadlineText, // keeps the friendly DD/MM/AAAA for the UI
-        });
-      }
-
-      setPendingActions(newPendingActions);
+      await syncMeetingParticipantsWithServer(currentMeetingId);
+      await minutesService.confirmMeetingMinutes(currentMeetingId);
+      await refreshMeetingMinutesState(currentMeetingId);
+      await actionsService.fetchActionsBoard();
+      setActionsRefreshToken((prev) => prev + 1);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao extrair ações.");
+      if (isApiError(err) && err.status === 409) {
+        try {
+          await refreshMeetingMinutesState(currentMeetingId);
+        } catch {
+          // Keep UX resilient even if refresh fails.
+        }
+      }
+      setError(getApiErrorMessage(err, "Erro ao confirmar ata."));
     } finally {
       setIsConfirmingAta(false);
     }
-  }, [ataText, meetingsService, participants, result]);
-
-  const handleApproveActions = useCallback(async (approvedActions: PendingAction[]) => {
-    setIsConfirmingAta(true);
-    try {
-      for (const act of approvedActions) {
-        let deadlinePayload: string | undefined = undefined;
-        if (act.deadline && act.deadline.includes("/")) {
-           const parts = act.deadline.split("/");
-           if (parts.length === 3) {
-             const day = parts[0].padStart(2, "0");
-             const month = parts[1].padStart(2, "0");
-             const year = parts[2];
-             deadlinePayload = `${year}-${month}-${day}T12:00:00Z`;
-           }
-        }
-
-        await actionsService.createAction({
-          title: act.title,
-          description: "",
-          priority: "medium",
-          action_type: "task",
-          responsible_email: act.responsibleEmail || owner.email, // fallback
-          deadline: deadlinePayload,
-          ...(currentMeetingId ? { meeting_id: currentMeetingId } : {}),
-          ...(currentMinutesId ? { minutes_id: currentMinutesId } : {}),
-        });
-      }
-
-      setPendingActions(null);
-      setIsAtaConfirmed(true);
-      setPastMeetings((prev) => {
-        const cloned = [...prev];
-        const targetId = selectedMeeting ? selectedMeeting.id : (cloned.length > 0 ? cloned[0].id : null);
-        if (targetId) {
-          const idx = cloned.findIndex((m) => m.id === targetId);
-          if (idx !== -1) {
-            cloned[idx].isConfirmed = true;
-            cloned[idx].editedAtaText = ataText;
-          }
-        }
-        return cloned;
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao criar as ações finais.");
-    } finally {
-      setIsConfirmingAta(false);
-    }
-  }, [actionsService, ataText, currentMeetingId, currentMinutesId, owner, selectedMeeting]);
+  }, [actionsService, ataText, currentMeetingId, refreshMeetingMinutesState, result, syncMeetingParticipantsWithServer, minutesService]);
 
   const resetRecording = useCallback(() => {
     setAppState("idle");
@@ -309,6 +495,11 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
     setSendError(null);
     setSelectedMeeting(null);
     setMeetingContext(null);
+    setSelectedCalendarEventId(null);
+    setCurrentMeetingId(null);
+    setCurrentMinutesId(null);
+    setCurrentMeetingSnapshot(null);
+    setIsAtaConfirmed(false);
     setShowSystemAudioHint(false);
     micStreamRef.current = null;
     systemAudioTrackRef.current = null;
@@ -333,23 +524,19 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
   }, [addParticipant]);
 
   const handleSendEmails = useCallback(async () => {
-    if (!result) return;
+    if (!currentMeetingId || !isAtaConfirmed) return;
     setIsSending(true);
     setSendError(null);
     try {
-      await meetingsService.sendMinutes({
-        meeting_title: result.minutes.title || "Reunião sem título",
-        ata_text: ataText,
-        participants: participants.map((p) => p.email),
-      });
+      await minutesService.distributeMinutesByEmail(currentMeetingId);
       setEmailSent(true);
       setTimeout(() => setEmailSent(false), 3000);
     } catch (err) {
-      setSendError(err instanceof Error ? err.message : "Erro ao enviar email");
+      setSendError(getApiErrorMessage(err, "Erro ao enviar email"));
     } finally {
       setIsSending(false);
     }
-  }, [ataText, meetingsService, participants, result]);
+  }, [currentMeetingId, isAtaConfirmed, minutesService]);
 
   const handleAtaChange = useCallback((text: string) => {
     setAtaText(text);
@@ -367,45 +554,124 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
     }));
   }, [selectedMeeting]);
 
+  useEffect(() => {
+    if (!currentMeetingId || !selectedMeeting || appState !== "finished") return;
+
+    let mounted = true;
+    (async () => {
+      try {
+        const note = await notesService.getMeetingNote(currentMeetingId);
+        if (mounted) setNotes(note.content || "");
+      } catch (err) {
+        if (mounted) {
+          if (isApiError(err) && err.status === 404) {
+            setNotes("");
+          } else {
+            setError(err instanceof Error ? err.message : "Erro ao carregar nota privada.");
+          }
+        }
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [appState, currentMeetingId, notesService, selectedMeeting]);
+
+  useEffect(() => {
+    if (!currentMeetingId || !selectedMeeting || appState !== "finished") return;
+
+    let mounted = true;
+    (async () => {
+      try {
+        await refreshMeetingMinutesState(currentMeetingId);
+      } catch (err) {
+        if (!mounted) {
+          return;
+        }
+        if (isApiError(err) && err.status === 404) {
+          return;
+        }
+        setError(getApiErrorMessage(err, "Erro ao sincronizar ata da reunião."));
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [appState, currentMeetingId, refreshMeetingMinutesState, selectedMeeting]);
+
   const transcriptionText = result ? formatTranscription(result) : "";
 
   const handleAiRewrite = useCallback(async (instruction: string) => {
-    if (!result || isAiRewriting) return;
+    if (!result || !currentMeetingId || isAiRewriting) return;
     setIsAiRewriting(true);
     setError(null);
 
     try {
-      const participantNames = meetingContext
-        ? participants.map((p) => p.name).join(", ")
-        : "";
-      const meetingTitle = meetingContext
-        ? meetingContext.split("\n").find((l) => l.startsWith("Título"))?.replace("Título da reunião: ", "") ?? ""
-        : "";
+      const updatedMinutes = await minutesService.editMeetingMinutes(currentMeetingId, instruction);
+      let snapshot = currentMeetingSnapshot ?? {
+        title: result.minutes.title || "Reunião sem título",
+        createdAt: new Date().toISOString(),
+        participants: [],
+      };
 
-      const rewrittenAta = await meetingsService.rewriteMeeting({
-        current_ata: ataText,
-        transcription: transcriptionText,
-        notes,
-        user_request: instruction,
-        participants: participantNames,
-        meeting_title: meetingTitle,
-      });
-      handleAtaChange(rewrittenAta);
+      if (snapshot.participants.length === 0) {
+        try {
+          const latestMeeting = await meetingsService.getMeetingById(currentMeetingId);
+          snapshot = {
+            title: latestMeeting.title,
+            scheduledAt: latestMeeting.scheduledAt,
+            createdAt: latestMeeting.createdAt,
+            participants: latestMeeting.participants || [],
+          };
+          setCurrentMeetingSnapshot(snapshot);
+        } catch {
+          // If this lookup fails, keep rendering with the best snapshot we already have.
+        }
+      }
+
+      const mappedMinutes = mapMinutesResponseToMinutes(
+        {
+          title: snapshot.title,
+          createdAt: snapshot.createdAt,
+          scheduledAt: snapshot.scheduledAt,
+        },
+        updatedMinutes,
+        snapshot.participants,
+      );
+
+      setResult((prev) => (prev ? { ...prev, minutes: mappedMinutes, minutes_id: updatedMinutes.id } : prev));
+      setCurrentMinutesId(updatedMinutes.id);
+      handleAtaChange(formatMinutesToAta(mappedMinutes));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao reescrever a ata");
+      if (isApiError(err) && err.status === 409) {
+        try {
+          await refreshMeetingMinutesState(currentMeetingId);
+        } catch {
+          // Keep UX resilient even if refresh fails.
+        }
+      }
+      setError(getApiErrorMessage(err, "Erro ao reescrever a ata"));
     } finally {
       setIsAiRewriting(false);
     }
-  }, [ataText, handleAtaChange, isAiRewriting, meetingContext, meetingsService, notes, participants, result, transcriptionText]);
+  }, [currentMeetingId, currentMeetingSnapshot, handleAtaChange, isAiRewriting, meetingsService, minutesService, refreshMeetingMinutesState, result]);
 
   const viewMeeting = useCallback((meeting: StoredMeeting) => {
     setSelectedMeeting(meeting);
     setResult(meeting.result);
     setAtaText(meeting.editedAtaText ?? formatMinutesToAta(meeting.result.minutes));
     setNotes(meeting.notes ?? "");
-    // Restaura os IDs de reunião/ata para que handleApproveActions funcione corretamente.
     setCurrentMeetingId(meeting.result.meeting_id ?? null);
     setCurrentMinutesId(meeting.result.minutes_id ?? null);
+    setCurrentMeetingSnapshot({
+      title: meeting.result.minutes.title || meeting.title,
+      createdAt: new Date().toISOString(),
+      participants: [],
+    });
+    setIsAtaConfirmed(Boolean(meeting.isConfirmed));
+    setSelectedCalendarEventId(null);
     setSidebarView("home");
     setAppState("finished");
     setShowPanel(true);
@@ -416,6 +682,12 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
     setSidebarView("home");
     resetRecording();
   }, [resetRecording]);
+
+  const handleStartManual = useCallback(() => {
+    setSelectedCalendarEventId(null);
+    setMeetingContext(null);
+    void startRecording();
+  }, [startRecording]);
 
   const handleStartCalendarMeeting = useCallback((meeting: CalendarMeeting) => {
     const calendarParticipants: Participant[] = [
@@ -434,10 +706,11 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
     ].filter(Boolean).join("\n");
 
     setMeetingContext(context);
+    setSelectedCalendarEventId(meeting.id);
     setCalendarMeeting(null);
     setSidebarView("home");
     setParticipants(calendarParticipants);
-    startRecording();
+    void startRecording();
   }, [startRecording, owner]);
 
   // suppress unused variable warning
@@ -481,7 +754,7 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
               participants={participants}
               isAiRewriting={isAiRewriting}
               showSystemAudioHint={showSystemAudioHint}
-              onStart={startRecording}
+              onStart={handleStartManual}
               onStop={handleStop}
               onReset={resetRecording}
               onAiRewrite={handleAiRewrite}
@@ -500,9 +773,6 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
               isAtaConfirmed={isAtaConfirmed}
               isConfirmingAta={isConfirmingAta}
               onConfirmAta={handleConfirmAta}
-              pendingActions={pendingActions}
-              setPendingActions={setPendingActions}
-              onApproveActions={handleApproveActions}
             />
           )}
 
@@ -522,7 +792,12 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
             />
           )}
 
-          {sidebarView === "acoes" && <ActionsView userEmail={user?.email} />}
+          {sidebarView === "acoes" && (
+            <ActionsView
+              userEmail={user?.email}
+              refreshToken={actionsRefreshToken}
+            />
+          )}
 
           {sidebarView === "settings" && <SettingsView />}
         </div>
