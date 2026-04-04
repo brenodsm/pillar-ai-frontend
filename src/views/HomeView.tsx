@@ -78,6 +78,7 @@ export function HomeView({
   isAtaConfirmed, isConfirmingAta, onConfirmAta
 }: HomeViewProps) {
   const [agendaModal, setAgendaModal] = useState<CalendarMeeting | null>(null);
+  const [isParticipantsModalOpen, setIsParticipantsModalOpen] = useState(false);
 
   // ── Dashboard computed values ──────────────────────────────────────────────
 
@@ -139,21 +140,7 @@ export function HomeView({
               isAtaConfirmed={isAtaConfirmed}
               isConfirmingAta={isConfirmingAta}
               onConfirmAta={onConfirmAta}
-            />
-          )}
-          {appState === "finished" && result && (
-            <ParticipantsPanel
-              participants={participants}
-              emailInput={emailInput}
-              emailSent={emailSent}
-              isSending={isSending}
-              sendError={sendError}
-              setEmailInput={setEmailInput}
-              onAdd={onAddParticipant}
-              onRemove={onRemoveParticipant}
-              onKeyDown={onEmailKeyDown}
-              onSend={onSendEmails}
-              isAtaConfirmed={isAtaConfirmed}
+              onOpenParticipantsModal={() => setIsParticipantsModalOpen(true)}
             />
           )}
 
@@ -174,6 +161,93 @@ export function HomeView({
               >
                 {isConfirmingAta ? "Confirmando..." : "Confirmar Ata"}
               </button>
+            </div>
+          )}
+
+          {appState === "finished" && result && isParticipantsModalOpen && (
+            <div
+              onClick={(e) => { if (e.target === e.currentTarget) setIsParticipantsModalOpen(false); }}
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 1100,
+                background: "rgba(20,22,22,0.48)",
+                backdropFilter: "blur(8px)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 16,
+              }}
+            >
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-label="Gerenciar participantes"
+                style={{
+                  width: "min(760px, 100%)",
+                  maxHeight: "min(86vh, 860px)",
+                  overflow: "auto",
+                  background: C.white,
+                  borderRadius: 20,
+                  boxShadow: "0 24px 64px rgba(0,0,0,0.2)",
+                  border: `1px solid ${C.creamDark}`,
+                }}
+              >
+                <div style={{
+                  padding: "20px 22px 14px",
+                  borderBottom: `1px solid ${C.creamDark}`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                }}>
+                  <div>
+                    <div style={{ fontSize: 17, fontWeight: 700, color: C.dark }}>
+                      Gerenciar participantes
+                    </div>
+                    <div style={{ fontSize: 12.5, color: C.grayLight, marginTop: 3 }}>
+                      Mantenha a lista atualizada antes do envio da ata.
+                    </div>
+                  </div>
+                  <button
+                    aria-label="Fechar modal de participantes"
+                    className="danger-icon-btn"
+                    onClick={() => setIsParticipantsModalOpen(false)}
+                    style={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: 10,
+                      border: `1px solid ${C.creamDark}`,
+                      background: C.bg,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      transition: "background-color 240ms cubic-bezier(0.22, 1, 0.36, 1), border-color 240ms cubic-bezier(0.22, 1, 0.36, 1), color 200ms ease, box-shadow 240ms cubic-bezier(0.22, 1, 0.36, 1), transform 180ms ease",
+                      transform: "translateY(0)",
+                      color: C.grayLight,
+                    }}
+                  >
+                    <Icon name="x" size={15} color="currentColor" />
+                  </button>
+                </div>
+
+                <div style={{ padding: "0 22px 20px" }}>
+                  <ParticipantsPanel
+                    participants={participants}
+                    emailInput={emailInput}
+                    emailSent={emailSent}
+                    isSending={isSending}
+                    sendError={sendError}
+                    setEmailInput={setEmailInput}
+                    onAdd={onAddParticipant}
+                    onRemove={onRemoveParticipant}
+                    onKeyDown={onEmailKeyDown}
+                    onSend={onSendEmails}
+                    isAtaConfirmed={isAtaConfirmed}
+                    inModal
+                  />
+                </div>
+              </div>
             </div>
           )}
         </div>

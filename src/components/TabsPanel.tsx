@@ -21,6 +21,7 @@ interface TabsPanelProps {
   isAtaConfirmed: boolean;
   isConfirmingAta: boolean;
   onConfirmAta: () => Promise<void>;
+  onOpenParticipantsModal?: () => void;
 }
 
 const ATA_HEADING_LABELS: Record<string, string> = {
@@ -63,6 +64,23 @@ function formatParticipantOption(participant: Participant): string {
     return `${name} (${email})`;
   }
   return name || email || "";
+}
+
+function getParticipantInitials(participant: Participant): string {
+  const fromName = participant.name
+    .split(" ")
+    .map((word) => word.trim()[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+
+  if (fromName) {
+    return fromName;
+  }
+
+  const fromEmail = participant.email.trim().charAt(0).toUpperCase();
+  return fromEmail || "?";
 }
 
 function renderAtaText(ataText: string) {
@@ -263,6 +281,7 @@ export function TabsPanel({
   isAtaConfirmed,
   isConfirmingAta,
   onConfirmAta,
+  onOpenParticipantsModal,
 }: TabsPanelProps) {
   const [showAiInput, setShowAiInput] = useState(false);
   const [aiInstruction, setAiInstruction] = useState("");
@@ -358,7 +377,7 @@ export function TabsPanel({
       animation: "panelOpen 0.5s cubic-bezier(0.16,1,0.3,1)",
     }}>
       {/* Tabs */}
-      <div style={{ display: "flex", borderBottom: `1px solid ${C.creamDark}`, padding: "0 8px", background: C.bg }}>
+      <div style={{ display: "flex", alignItems: "center", borderBottom: `1px solid ${C.creamDark}`, padding: "0 8px", background: C.bg }}>
         <button className={`tab-btn ${activeTab === "notas" ? "active" : ""}`} onClick={() => setActiveTab("notas")}>
           Notas da Reunião
         </button>
@@ -388,6 +407,117 @@ export function TabsPanel({
           >
             Ações
           </button>
+        )}
+        {appState === "finished" && result && onOpenParticipantsModal && (
+          <div style={{ marginLeft: "auto", padding: "8px 4px 8px 12px" }}>
+            <button
+              aria-label={`Gerenciar participantes (${participants.length})`}
+              onClick={onOpenParticipantsModal}
+              className="participants-chip"
+              style={{
+                border: `1px solid rgba(255,145,20,0.35)`,
+                background: C.white,
+                borderRadius: 14,
+                padding: "6px 10px 6px 8px",
+                color: C.dark,
+                fontSize: 14,
+                fontWeight: 700,
+                fontFamily: "inherit",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 10,
+                whiteSpace: "nowrap",
+                minHeight: 46,
+                transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+              }}
+            >
+              <span
+                aria-hidden="true"
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 10,
+                  background: C.orange,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <Icon name="plus" size={14} color={C.white} />
+              </span>
+
+              <span className="participants-chip-label">Participantes</span>
+
+              <span
+                aria-hidden="true"
+                style={{ display: "inline-flex", alignItems: "center", marginLeft: 2 }}
+              >
+                {participants.slice(0, 3).map((participant, index) => (
+                  <span
+                    key={participant.email}
+                    style={{
+                      width: 24,
+                      height: 24,
+                      borderRadius: "50%",
+                      marginLeft: index === 0 ? 0 : -7,
+                      border: `1.5px solid ${C.white}`,
+                      background: participant.isOwner ? C.orangeLight : C.grayLighter,
+                      color: participant.isOwner ? C.white : C.gray,
+                      fontSize: 10,
+                      fontWeight: 700,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    {getParticipantInitials(participant)}
+                  </span>
+                ))}
+                {participants.length > 3 && (
+                  <span
+                    style={{
+                      width: 24,
+                      height: 24,
+                      borderRadius: "50%",
+                      marginLeft: -7,
+                      border: `1.5px solid ${C.white}`,
+                      background: C.creamDark,
+                      color: C.grayLight,
+                      fontSize: 10,
+                      fontWeight: 700,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    +{participants.length - 3}
+                  </span>
+                )}
+              </span>
+
+              <span
+                aria-hidden="true"
+                style={{
+                  minWidth: 25,
+                  height: 25,
+                  borderRadius: 8,
+                  background: C.cream,
+                  color: C.orange,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "0 7px",
+                  marginLeft: 2,
+                }}
+              >
+                {participants.length}
+              </span>
+            </button>
+          </div>
         )}
       </div>
 
