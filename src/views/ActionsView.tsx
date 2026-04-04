@@ -1,5 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
-import { DndContext, DragEndEvent, useDroppable, useDraggable, useSensors, useSensor, PointerSensor } from "@dnd-kit/core";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  DndContext,
+  DragEndEvent,
+  DragOverlay,
+  DragStartEvent,
+  PointerSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { C } from "../constants/colors";
 import { Icon } from "../components/Icon";
@@ -15,13 +25,88 @@ interface ActionsViewProps {
   refreshToken?: number;
 }
 
-function DroppableColumn({ col, children }: { col: { id: ActionStatus; title: string; color: string }; children: React.ReactNode }) {
-  const { setNodeRef, isOver } = useDroppable({ id: col.id });
+interface ColumnDefinition {
+  id: ActionStatus;
+  title: string;
+  accent: string;
+  softBg: string;
+  pillBg: string;
+  pillColor: string;
+}
+
+const STATUS_META: Record<ActionStatus, Omit<ColumnDefinition, "id">> = {
+  pending: {
+    title: "Não iniciada",
+    accent: "#777B82",
+    softBg: "#F2F2F1",
+    pillBg: "#E4E4E2",
+    pillColor: "#4B5563",
+  },
+  in_progress: {
+    title: "Em andamento",
+    accent: "#3B82F6",
+    softBg: "#EAF1FD",
+    pillBg: "#D8E6FB",
+    pillColor: "#1D4ED8",
+  },
+  done: {
+    title: "Concluído",
+    accent: "#2EAA5C",
+    softBg: "#EAF6EE",
+    pillBg: "#D6EFDE",
+    pillColor: "#166534",
+  },
+};
+
+const COLUMN_ORDER: ActionStatus[] = ["pending", "in_progress", "done"];
+
+function DroppableColumn({
+  column,
+  count,
+  children,
+}: {
+  column: ColumnDefinition;
+  count: number;
+  children: React.ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: column.id });
+
   return (
-    <div ref={setNodeRef} style={{
-      flex: 1, minWidth: 300, background: isOver ? "#F3F4F6" : C.cream,
-      borderRadius: 12, display: "flex", flexDirection: "column", padding: 16
-    }}>
+    <div
+      ref={setNodeRef}
+      style={{
+        width: 340,
+        minWidth: 340,
+        background: isOver ? "#E8EEF7" : column.softBg,
+        borderRadius: 12,
+        display: "flex",
+        flexDirection: "column",
+        padding: 10,
+        border: `1px solid ${isOver ? `${column.accent}66` : "#E3E3E1"}`,
+        transition: "all 0.2s ease",
+        overflow: "hidden",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            borderRadius: 999,
+            padding: "4px 10px",
+            fontSize: 12,
+            fontWeight: 600,
+            background: column.pillBg,
+            color: column.pillColor,
+          }}
+        >
+          <span style={{ width: 7, height: 7, borderRadius: "50%", background: column.accent }} />
+          {column.title}
+        </div>
+        <div style={{ fontSize: 12, color: C.gray, fontWeight: 600 }}>{count}</div>
+      </div>
+
       {children}
     </div>
   );
@@ -34,8 +119,14 @@ function DraggableCard({ action, disabled, children }: { action: Action; disable
   });
   const style = {
     transform: CSS.Translate.toString(transform),
-    opacity: isDragging ? 0.5 : 1,
-    cursor: disabled ? "default" : "grab",
+    opacity: isDragging ? 0.15 : 1,
+    cursor: disabled ? "default" : isDragging ? "grabbing" : "grab",
+    width: "100%",
+    maxWidth: 320,
+    margin: "0 auto",
+    position: "relative" as const,
+    zIndex: isDragging ? 12 : 1,
+    touchAction: "none" as const,
   };
   return (
     <div
@@ -63,6 +154,7 @@ export function ActionsView({ userEmail, refreshToken = 0 }: ActionsViewProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedAction, setSelectedAction] = useState<Action | null>(null);
+  const [activeActionId, setActiveActionId] = useState<string | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
@@ -111,7 +203,16 @@ export function ActionsView({ userEmail, refreshToken = 0 }: ActionsViewProps) {
     }
   }, [actions, actionsService, loadActions, userEmail]);
 
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveActionId(String(event.active.id));
+  };
+
+  const handleDragCancel = () => {
+    setActiveActionId(null);
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
+    setActiveActionId(null);
     const { active, over } = event;
     if (over && active.id !== over.id) {
       const draggedAction = actions.find((item) => item.id === String(active.id));
@@ -122,29 +223,52 @@ export function ActionsView({ userEmail, refreshToken = 0 }: ActionsViewProps) {
     }
   };
 
-  const columns: { id: ActionStatus; title: string; color: string }[] = [
-    { id: "pending", title: "Pendentes", color: C.orange },
-    { id: "in_progress", title: "Em Andamento", color: "#3B82F6" },
-    { id: "done", title: "Concluídos", color: C.green },
-  ];
+  const columns: ColumnDefinition[] = useMemo(
+    () =>
+      COLUMN_ORDER.map((status) => ({
+        id: status,
+        ...STATUS_META[status],
+      })),
+    []
+  );
+
+  const actionsByStatus = useMemo(() => {
+    const grouped: Record<ActionStatus, Action[]> = {
+      pending: [],
+      in_progress: [],
+      done: [],
+    };
+
+    const sorted = [...actions].sort((a, b) => {
+      const firstDate = a.deadline ? new Date(a.deadline).getTime() : Number.MAX_SAFE_INTEGER;
+      const secondDate = b.deadline ? new Date(b.deadline).getTime() : Number.MAX_SAFE_INTEGER;
+      if (firstDate !== secondDate) return firstDate - secondDate;
+      return a.title.localeCompare(b.title);
+    });
+
+    sorted.forEach((action) => grouped[action.status].push(action));
+    return grouped;
+  }, [actions]);
+
+  const activeAction = useMemo(
+    () => (activeActionId ? actions.find((action) => action.id === activeActionId) ?? null : null),
+    [actions, activeActionId]
+  );
 
   return (
-    <div style={{ padding: "24px", height: "100%", display: "flex", flexDirection: "column" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-        <div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>Ações</h1>
-          <p style={{ margin: "4px 0 0", color: C.grayLight, fontSize: 13 }}>Gerencie as pendências e tarefas geradas.</p>
-        </div>
-        <button
-          onClick={loadActions}
-          style={{
-            display: "flex", alignItems: "center", gap: 8, padding: "8px 16px",
-            background: C.white, border: `1px solid ${C.creamDark}`, borderRadius: 8,
-            cursor: "pointer", fontSize: 13, fontWeight: 600, color: C.dark
-          }}
-        >
-          <Icon name="play" size={14} /> Atualizar
-        </button>
+    <div style={{ padding: "24px", height: "100%", display: "flex", flexDirection: "column", background: "#F7F7F5" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          marginBottom: 14,
+          paddingBottom: 12,
+          borderBottom: "1px solid #E8E8E6",
+        }}
+      >
+        <h1 style={{ fontSize: "clamp(26px, 3.8vw, 32px)", fontWeight: 700, margin: 0, letterSpacing: "-0.015em", color: C.dark }}>
+          Painel de Ações
+        </h1>
       </div>
 
       {error && (
@@ -158,28 +282,32 @@ export function ActionsView({ userEmail, refreshToken = 0 }: ActionsViewProps) {
           Carregando ações…
         </div>
       ) : (
-        <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-          <div style={{ display: "flex", gap: 24, flex: 1, overflowX: "auto", paddingBottom: 16 }}>
-            {columns.map(col => {
-              const colActions = actions.filter((a) => a.status === col.id);
+        <DndContext sensors={sensors} onDragStart={handleDragStart} onDragCancel={handleDragCancel} onDragEnd={handleDragEnd}>
+          <div style={{ display: "flex", gap: 14, flex: 1, overflowX: "auto", paddingBottom: 16, justifyContent: "center" }}>
+            {columns.map((column) => {
+              const colActions = actionsByStatus[column.id];
 
               return (
-                <DroppableColumn key={col.id} col={col}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-                    <div style={{
-                      fontSize: 13, fontWeight: 700, color: col.color, textTransform: "uppercase",
-                      letterSpacing: "0.05em", display: "flex", alignItems: "center", gap: 8
-                    }}>
-                      <div style={{ width: 8, height: 8, borderRadius: "50%", background: col.color }} />
-                      {col.title}
-                    </div>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: C.grayLight, background: C.creamDark, padding: "2px 8px", borderRadius: 12 }}>
-                      {colActions.length}
-                    </div>
-                  </div>
+                <DroppableColumn key={column.id} column={column} count={colActions.length}>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 8,
+                      flex: 1,
+                      overflowY: "auto",
+                      overflowX: "hidden",
+                      minHeight: 120,
+                    }}
+                  >
+                    {colActions.map((action) => {
+                      const actionStatusMeta = STATUS_META[action.status];
+                      const actionContext = action.meeting_title || action.description || "Sem contexto adicional";
+                      const extraDescription = action.meeting_title && action.description ? action.description : null;
+                      const availableStatus = COLUMN_ORDER.filter((status) => status !== action.status);
 
-                  <div style={{ display: "flex", flexDirection: "column", gap: 12, flex: 1, overflowY: "auto" }}>
-                    {colActions.map(action => (
+                      return (
                       <DraggableCard
                         key={action.id}
                         action={action}
@@ -188,66 +316,124 @@ export function ActionsView({ userEmail, refreshToken = 0 }: ActionsViewProps) {
                         <div
                           onClick={() => setSelectedAction(action)}
                           style={{
-                            background: C.white, padding: 16, borderRadius: 10,
-                            boxShadow: "0 2px 4px rgba(0,0,0,0.02)",
-                            border: `1px solid ${C.creamDark}`,
-                            display: "flex", flexDirection: "column", gap: 8,
+                            background: C.white,
+                            padding: "12px 12px 10px",
+                            borderRadius: 10,
+                            boxShadow: "0 1px 3px rgba(18,18,18,0.07)",
+                            border: "1px solid #E5E5E3",
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 8,
                             cursor: "pointer",
                           }}
                         >
-                          <div style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>{action.title}</div>
-                          {action.meeting_title && (
-                            <div style={{ fontSize: 12, color: C.gray, lineHeight: 1.4 }}>
-                              Reunião: {action.meeting_title}
+                          <div style={{ fontSize: 16, fontWeight: 700, color: C.dark, letterSpacing: "-0.01em", lineHeight: 1.25 }}>
+                            {action.title}
+                          </div>
+
+                          <div style={{ fontSize: 13, color: C.darkMid, lineHeight: 1.35 }}>{actionContext}</div>
+
+                          {extraDescription && (
+                            <div
+                              style={{
+                                fontSize: 12,
+                                color: C.gray,
+                                lineHeight: 1.4,
+                                maxHeight: 34,
+                                overflow: "hidden",
+                              }}
+                            >
+                              {extraDescription}
                             </div>
                           )}
-                          <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 4 }}>
-                            <div style={{ fontSize: 11, color: C.grayLight, display: "flex", alignItems: "center", gap: 4 }}>
-                              <Icon name="calendar" size={12} />
-                              {action.deadline ? formatDateToBrDate(action.deadline) : "Sem prazo"}
-                            </div>
-                            <div style={{ fontSize: 11, color: C.grayLight, display: "flex", alignItems: "center", gap: 4 }}>
-                              <Icon name="users" size={12} />
-                              {action.responsible_email}
-                            </div>
+
+                          <div style={{ display: "inline-flex", width: "fit-content", alignItems: "center", gap: 6, marginTop: 4 }}>
+                            <span
+                              style={{
+                                borderRadius: 999,
+                                padding: "2px 10px",
+                                fontSize: 12,
+                                fontWeight: 600,
+                                background: actionStatusMeta.pillBg,
+                                color: actionStatusMeta.pillColor,
+                              }}
+                            >
+                              {actionStatusMeta.title}
+                            </span>
+                          </div>
+
+                          <div style={{ fontSize: 12, color: C.grayLight, display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
+                            <Icon name="calendar" size={12} />
+                            {action.deadline ? formatDateToBrDate(action.deadline) : "Sem prazo"}
                           </div>
 
                           <div
-                            onClick={e => e.stopPropagation()}
-                            style={{ display: "flex", justifyContent: "flex-end", marginTop: 8, gap: 8 }}
+                            style={{
+                              fontSize: 12,
+                              color: C.gray,
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 6,
+                              minHeight: 20,
+                            }}
+                          >
+                            <Icon name="users" size={12} />
+                            <span
+                              style={{
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {action.responsible_email || "Sem responsável"}
+                            </span>
+                          </div>
+
+                          <div
+                            onClick={(event) => event.stopPropagation()}
+                            style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginTop: 6 }}
                           >
                             {!isActionOwnedByUser(action, userEmail) ? (
                               <span style={{ fontSize: 11, color: C.grayLighter, fontWeight: 600 }}>
                                 Somente responsável
                               </span>
-                            ) : null}
-                            {col.id !== "pending" && isActionOwnedByUser(action, userEmail) && (
-                              <button
-                                onClick={e => { e.stopPropagation(); handleStatusChange(action.id, "pending", action); }}
-                                style={{ fontSize: 11, padding: "4px 8px", borderRadius: 4, background: C.cream, border: "none", cursor: "pointer", color: C.gray }}>
-                                Mover p/ Pendente
-                              </button>
+                            ) : (
+                              <span style={{ fontSize: 11, color: C.grayLight, fontWeight: 500 }}>
+                                Arraste ou use os atalhos:
+                              </span>
                             )}
-                            {col.id !== "in_progress" && isActionOwnedByUser(action, userEmail) && (
-                              <button
-                                onClick={e => { e.stopPropagation(); handleStatusChange(action.id, "in_progress", action); }}
-                                style={{ fontSize: 11, padding: "4px 8px", borderRadius: 4, background: "#DBEAFE", border: "none", cursor: "pointer", color: "#1D4ED8" }}>
-                                Em Progresso
-                              </button>
-                            )}
-                            {col.id !== "done" && isActionOwnedByUser(action, userEmail) && (
-                              <button
-                                onClick={e => { e.stopPropagation(); handleStatusChange(action.id, "done", action); }}
-                                style={{ fontSize: 11, padding: "4px 8px", borderRadius: 4, background: "#D1FAE5", border: "none", cursor: "pointer", color: "#065F46" }}>
-                                Concluir
-                              </button>
-                            )}
+                            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                              {isActionOwnedByUser(action, userEmail) &&
+                                availableStatus.map((status) => (
+                                  <button
+                                    key={status}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      handleStatusChange(action.id, status, action);
+                                    }}
+                                    style={{
+                                      fontSize: 11,
+                                      lineHeight: 1,
+                                      padding: "5px 8px",
+                                      borderRadius: 999,
+                                      border: "none",
+                                      cursor: "pointer",
+                                      background: STATUS_META[status].pillBg,
+                                      color: STATUS_META[status].pillColor,
+                                      fontWeight: 600,
+                                    }}
+                                  >
+                                    {STATUS_META[status].title}
+                                  </button>
+                                ))}
+                            </div>
                           </div>
                         </div>
                       </DraggableCard>
-                    ))}
+                      );
+                    })}
                     {colActions.length === 0 && (
-                      <div style={{ textAlign: "center", padding: "24px 0", color: C.grayLighter, fontSize: 13 }}>
+                      <div style={{ textAlign: "center", padding: "24px 0", color: C.grayLighter, fontSize: 13, borderRadius: 8 }}>
                         Nenhuma ação aqui.
                       </div>
                     )}
@@ -256,6 +442,32 @@ export function ActionsView({ userEmail, refreshToken = 0 }: ActionsViewProps) {
               );
             })}
           </div>
+          <DragOverlay>
+            {activeAction ? (
+              <div
+                style={{
+                  width: 320,
+                  background: C.white,
+                  padding: "12px 12px 10px",
+                  borderRadius: 10,
+                  boxShadow: "0 10px 24px rgba(17,24,39,0.22)",
+                  border: "1px solid #D5DAE3",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                  cursor: "grabbing",
+                }}
+              >
+                <div style={{ fontSize: 16, fontWeight: 700, color: C.dark, letterSpacing: "-0.01em", lineHeight: 1.25 }}>
+                  {activeAction.title}
+                </div>
+                <div style={{ fontSize: 12, color: C.grayLight, display: "flex", alignItems: "center", gap: 6 }}>
+                  <Icon name="calendar" size={12} />
+                  {activeAction.deadline ? formatDateToBrDate(activeAction.deadline) : "Sem prazo"}
+                </div>
+              </div>
+            ) : null}
+          </DragOverlay>
         </DndContext>
       )}
 
