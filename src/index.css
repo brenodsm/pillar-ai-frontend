@@ -1,0 +1,134 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #B8BABA; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #8A8F8F; }
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes pulseRec {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(224,64,64,0.4); }
+  50% { box-shadow: 0 0 0 12px rgba(224,64,64,0); }
+}
+@keyframes pulseOrange {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255,145,20,0.3); }
+  50% { box-shadow: 0 0 0 16px rgba(255,145,20,0); }
+}
+@keyframes panelOpen {
+  from { opacity: 0; transform: translateY(20px) scaleY(0.96); }
+  to { opacity: 1; transform: translateY(0) scaleY(1); }
+}
+@keyframes tabSlide {
+  from { opacity: 0; transform: translateX(10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+.sidebar-item {
+  display: flex; align-items: center; gap: 12px; padding: 11px 16px;
+  border-radius: 10px; cursor: pointer; transition: all 0.2s ease;
+  font-size: 13.5px; font-weight: 500; color: #8A8F8F;
+  position: relative; letter-spacing: 0.01em;
+}
+.sidebar-item:hover { background: rgba(255,145,20,0.06); color: #2C2E2E; }
+.sidebar-item.active {
+  background: rgba(255,145,20,0.1); color: #FF9114;
+  font-weight: 600;
+}
+.sidebar-item.active::before {
+  content: ''; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+  width: 3px; height: 20px; background: #FF9114; border-radius: 0 3px 3px 0;
+}
+
+.tab-btn {
+  padding: 10px 20px; border: none; background: none; cursor: pointer;
+  font-family: inherit; font-size: 13.5px; font-weight: 500;
+  color: #8A8F8F; border-bottom: 2.5px solid transparent;
+  transition: all 0.25s ease; letter-spacing: 0.01em;
+}
+.tab-btn:hover { color: #2C2E2E; }
+.tab-btn.active { color: #FF9114; border-bottom-color: #FF9114; font-weight: 600; }
+
+.btn-primary {
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 13px 28px; border: none; border-radius: 12px;
+  font-family: inherit; font-size: 14.5px; font-weight: 600;
+  cursor: pointer; transition: all 0.25s ease;
+  letter-spacing: 0.01em; line-height: 1;
+}
+.btn-primary svg { display: block; flex-shrink: 0; }
+.btn-primary-centered-label {
+  position: relative;
+  min-width: 214px;
+  padding-left: 54px;
+  padding-right: 54px;
+}
+.btn-primary-centered-label svg {
+  position: absolute;
+  left: 24px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.btn-primary-centered-label span {
+  display: block;
+  width: 100%;
+  text-align: center;
+}
+.btn-primary:active { transform: scale(0.97); }
+
+.meeting-row {
+  display: flex; align-items: center; padding: 16px 20px;
+  border-radius: 12px; cursor: pointer; transition: all 0.2s ease;
+  border: 1px solid transparent;
+}
+.meeting-row:hover {
+  background: #FFFFFF; border-color: rgba(255,145,20,0.15);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+}
+
+.calendar-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000; animation: fadeIn 0.2s ease;
+}
+.calendar-modal {
+  background: #FFFFFF; border-radius: 16px; max-width: 480px; width: 90%;
+  padding: 28px; box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+  animation: slideUp 0.3s ease;
+}
+.calendar-meeting-block {
+  position: absolute;
+  background: rgba(255,145,20,0.10); border-left: 3px solid #FF9114;
+  border-radius: 6px; padding: 4px 8px; cursor: pointer;
+  transition: all 0.2s ease; overflow: hidden; z-index: 2;
+}
+.calendar-meeting-block:hover {
+  background: rgba(255,145,20,0.18);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+textarea {
+  width: 100%; min-height: 200px; border: none; outline: none;
+  font-family: 'DM Sans', sans-serif; font-size: 14px; line-height: 1.75;
+  color: #2C2E2E; background: transparent; resize: vertical;
+  padding: 0;
+}
+textarea::placeholder { color: #B8BABA; }

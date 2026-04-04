@@ -1,0 +1,17 @@
+export const C = {
+  orange: "#FF9114",
+  orangeLight: "#FFC85A",
+  orangeDark: "#E07A00",
+  cream: "#F7F5EF",
+  creamDark: "#EDEADF",
+  dark: "#2C2E2E",
+  darkMid: "#3A3D3D",
+  gray: "#555A5A",
+  grayLight: "#8A8F8F",
+  grayLighter: "#B8BABA",
+  white: "#FFFFFF",
+  bg: "#F9F8F5",
+  cardBg: "#FFFFFF",
+  redStop: "#E04040",
+  green: "#2EAA5C",
+};
