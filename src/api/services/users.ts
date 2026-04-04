@@ -1,11 +1,10 @@
-import { getJson, postJson } from "../client";
+import { getJson } from "../client";
 import { API_ROUTES } from "../config";
-import type { CalendarMeeting, SessionUser } from "../../types";
+import { mapMeToSessionUser } from "../mappers/userMapper";
+import type { SessionUser } from "../../types";
+import type { MeResponse } from "../types/swagger";
 
-export function resolveUser(email: string): Promise<SessionUser> {
-  return postJson<SessionUser>(API_ROUTES.users.resolve, { email });
-}
-
-export function getUserMeetings(email: string): Promise<CalendarMeeting[]> {
-  return getJson<CalendarMeeting[]>(API_ROUTES.users.meetings(email));
+export async function getCurrentUser(): Promise<SessionUser> {
+  const data = await getJson<MeResponse>(API_ROUTES.users.me);
+  return mapMeToSessionUser(data);
 }

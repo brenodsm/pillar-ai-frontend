@@ -1,4 +1,4 @@
-export type ActionStatus = "pending" | "in_progress" | "done" | "canceled" | "late";
+export type ActionStatus = "pending" | "in_progress" | "done";
 export type ActionPriority = "low" | "medium" | "high" | "critical";
 export type ActionType = "task" | "decision" | "approval";
 

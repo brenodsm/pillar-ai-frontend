@@ -66,11 +66,3 @@ export interface SessionState {
   user: SessionUser | null;
   meetings: CalendarMeeting[];
 }
-
-export interface PendingAction {
-  id: string;
-  title: string;
-  responsibleEmail: string;
-  rawResponsible: string;
-  deadline: string;
-}

@@ -76,7 +76,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const errorPayload = isApiErrorPayload(payload) ? payload : null;
-    throw new ApiError(errorPayload?.error || response.statusText || "Erro na requisicao", response.status, errorPayload?.details);
+    const retryAfter = response.headers.get("Retry-After");
+    const rateLimitReset = response.headers.get("X-RateLimit-Reset");
+    const errorDetails =
+      errorPayload?.details && typeof errorPayload.details === "object"
+        ? errorPayload.details
+        : {};
+
+    throw new ApiError(errorPayload?.error || response.statusText || "Erro na requisicao", response.status, {
+      ...errorDetails,
+      ...(retryAfter ? { retryAfter } : {}),
+      ...(rateLimitReset ? { rateLimitReset } : {}),
+    });
   }
 
   if (payload === null) {
@@ -105,6 +116,14 @@ export function postJson<T, TBody = unknown>(path: string, body: TBody): Promise
 export function patchJson<T, TBody = unknown>(path: string, body: TBody): Promise<T> {
   return request<T>(path, {
     method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function putJson<T, TBody = unknown>(path: string, body: TBody): Promise<T> {
+  return request<T>(path, {
+    method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });

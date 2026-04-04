@@ -1,44 +1,57 @@
-import type { CalendarMeeting, ProcessResult, SessionUser } from "../types";
-import type { RewriteMeetingRequest, SendMinutesRequest } from "../types/api";
+import type { CalendarMeeting, SessionUser } from "../types";
+import type { Action, ActionStatus } from "../domain/actions";
 import type {
-  Action,
-  ActionAttachment,
-  ActionComment,
-  ActionHistory,
-  ActionReminder,
-  ActionStatus,
-  CreateActionRequest,
-  UpdateActionRequest,
-} from "../domain/actions";
-
-export interface ExtractedActionItem {
-  description: string;
-  responsible: string;
-  deadline: string;
-}
+  DistributionResponse,
+  MeetingListItemResponse,
+  MeetingResponse,
+  MinutesResponse,
+  NoteResponse,
+  ParticipantResponse,
+  TranscriptionResponse,
+  UploadTranscriptionResponse,
+} from "../api/types/swagger";
 
 export interface UsersService {
-  resolveUser(email: string): Promise<SessionUser>;
-  getUserMeetings(email: string): Promise<CalendarMeeting[]>;
+  getCurrentUser(): Promise<SessionUser>;
+  getCalendarEvents(startDateTime: string, endDateTime: string): Promise<CalendarMeeting[]>;
 }
 
 export interface MeetingsService {
-  processMeeting(audio: Blob, template?: string | null, organizerEmail?: string | null): Promise<ProcessResult>;
-  rewriteMeeting(payload: RewriteMeetingRequest): Promise<string>;
-  sendMinutes(payload: SendMinutesRequest): Promise<void>;
-  extractActions(ataText: string): Promise<ExtractedActionItem[]>;
+  listMeetings(): Promise<MeetingListItemResponse[]>;
+  createMeetingFromCalendarEvent(calendarEventId: string): Promise<MeetingResponse>;
+  createManualMeeting(title: string, scheduledAt?: string): Promise<MeetingResponse>;
+  getMeetingById(meetingId: string): Promise<MeetingResponse>;
+  updateMeetingTitle(meetingId: string, title: string): Promise<MeetingResponse>;
+  addMeetingParticipant(meetingId: string, email: string): Promise<ParticipantResponse>;
+  removeMeetingParticipant(meetingId: string, participantId: string): Promise<void>;
+  startMeetingRecording(meetingId: string): Promise<MeetingResponse>;
+}
+
+export interface TranscriptionService {
+  uploadTranscriptionAudio(meetingId: string, audio: Blob): Promise<UploadTranscriptionResponse>;
+  getMeetingTranscription(meetingId: string): Promise<TranscriptionResponse>;
+}
+
+export interface MinutesService {
+  getMeetingMinutes(meetingId: string): Promise<MinutesResponse>;
+  editMeetingMinutes(meetingId: string, instruction: string): Promise<MinutesResponse>;
+  confirmMeetingMinutes(meetingId: string): Promise<MinutesResponse>;
+  distributeMinutesByEmail(meetingId: string): Promise<DistributionResponse>;
+}
+
+export interface NotesService {
+  getMeetingNote(meetingId: string): Promise<NoteResponse>;
+  upsertMeetingNote(meetingId: string, content: string): Promise<NoteResponse>;
 }
 
 export interface ActionsService {
-  fetchActions(params?: Record<string, string>): Promise<Action[]>;
-  createAction(payload: CreateActionRequest): Promise<Action>;
-  updateAction(id: string, payload: UpdateActionRequest): Promise<Action>;
-  getActionComments(id: string): Promise<ActionComment[]>;
-  createActionComment(id: string, content: string, parentCommentId?: string): Promise<ActionComment>;
-  fetchActionAttachments(id: string): Promise<ActionAttachment[]>;
-  fetchActionReminders(id: string): Promise<ActionReminder[]>;
-  getActionHistory(id: string): Promise<ActionHistory[]>;
-  setActionStatus(id: string, status: ActionStatus): Promise<Action>;
+  fetchActionsBoard(params?: {
+    limit?: number;
+    offset?: number;
+    status?: ActionStatus[];
+    meeting_id?: string;
+  }): Promise<Action[]>;
+  updateActionStatus(id: string, status: ActionStatus): Promise<Action>;
 }
 
 export interface RuntimeService {
@@ -48,6 +61,9 @@ export interface RuntimeService {
 export interface AppServices {
   users: UsersService;
   meetings: MeetingsService;
+  transcription: TranscriptionService;
+  minutes: MinutesService;
+  notes: NotesService;
   actions: ActionsService;
   runtime: RuntimeService;
 }

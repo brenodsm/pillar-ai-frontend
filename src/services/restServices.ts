@@ -1,40 +1,56 @@
 import { API_URL } from "../api/config";
+import { fetchActionsBoard, updateActionStatus } from "../api/services/actions";
+import { getCalendarEvents } from "../api/services/calendar";
+import { distributeMinutesByEmail } from "../api/services/distribution";
 import {
-  createAction,
-  createActionComment,
-  fetchActionAttachments,
-  fetchActionReminders,
-  fetchActions,
-  getActionComments,
-  getActionHistory,
-  updateAction,
-} from "../api/services/actions";
-import { extractActions, processMeeting, rewriteMeeting, sendMinutes } from "../api/services/meetings";
-import { getUserMeetings, resolveUser } from "../api/services/users";
+  addMeetingParticipant,
+  createManualMeeting,
+  createMeetingFromCalendarEvent,
+  getMeetingById,
+  listMeetings,
+  removeMeetingParticipant,
+  startMeetingRecording,
+  updateMeetingTitle,
+} from "../api/services/meetings";
+import { confirmMeetingMinutes, editMeetingMinutes, getMeetingMinutes } from "../api/services/minutes";
+import { getMeetingNote, upsertMeetingNote } from "../api/services/notes";
+import { getMeetingTranscription, uploadTranscriptionAudio } from "../api/services/transcription";
+import { getCurrentUser } from "../api/services/users";
 import type { AppServices } from "./contracts";
 
 export function createRestServices(): AppServices {
   return {
     users: {
-      resolveUser,
-      getUserMeetings,
+      getCurrentUser,
+      getCalendarEvents,
     },
     meetings: {
-      processMeeting,
-      rewriteMeeting,
-      sendMinutes,
-      extractActions,
+      listMeetings,
+      createMeetingFromCalendarEvent,
+      createManualMeeting,
+      getMeetingById,
+      updateMeetingTitle,
+      addMeetingParticipant,
+      removeMeetingParticipant,
+      startMeetingRecording,
+    },
+    transcription: {
+      uploadTranscriptionAudio,
+      getMeetingTranscription,
+    },
+    minutes: {
+      getMeetingMinutes,
+      editMeetingMinutes,
+      confirmMeetingMinutes,
+      distributeMinutesByEmail,
+    },
+    notes: {
+      getMeetingNote,
+      upsertMeetingNote,
     },
     actions: {
-      fetchActions,
-      createAction,
-      updateAction,
-      getActionComments,
-      createActionComment,
-      fetchActionAttachments,
-      fetchActionReminders,
-      getActionHistory,
-      setActionStatus: (id, status) => updateAction(id, { status }),
+      fetchActionsBoard,
+      updateActionStatus,
     },
     runtime: {
       apiUrl: API_URL,
