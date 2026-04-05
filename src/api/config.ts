@@ -1,28 +1,37 @@
 const API_VERSION_PREFIX = "/api/v1";
-const DEFAULT_BACKEND_PORT = "8000";
+const REQUIRED_BACKEND_URL_ENV = "VITE_BACKEND_URL";
 
 function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, "");
 }
 
-function resolveDynamicBackendUrl(): string {
-  const backendPort = import.meta.env.VITE_BACKEND_PORT?.trim() || DEFAULT_BACKEND_PORT;
-
-  if (typeof window === "undefined") {
-    return `http://localhost:${backendPort}`;
-  }
-
-  const protocol = window.location.protocol === "https:" ? "https:" : "http:";
-  const host = window.location.hostname;
-  const needsPort = backendPort !== "80" && backendPort !== "443";
-
-  return `${protocol}//${host}${needsPort ? `:${backendPort}` : ""}`;
+function logApiConfigError(event: string, details: Record<string, unknown>): void {
+  // eslint-disable-next-line no-console
+  console.error({
+    scope: "api_config",
+    level: "error",
+    event,
+    ...details,
+  });
 }
 
-const configuredBackendUrl = import.meta.env.VITE_BACKEND_URL?.trim();
-const legacyApiUrl = import.meta.env.VITE_API_URL?.trim();
-const fallbackUrl = resolveDynamicBackendUrl();
-const normalizedConfiguredUrl = trimTrailingSlash(configuredBackendUrl || legacyApiUrl || fallbackUrl);
+function resolveConfiguredBackendUrl(): string {
+  const configuredBackendUrl = import.meta.env.VITE_BACKEND_URL?.trim();
+
+  if (!configuredBackendUrl) {
+    logApiConfigError("missing_required_backend_url", {
+      requiredEnv: REQUIRED_BACKEND_URL_ENV,
+      hasLegacyApiUrl: Boolean(import.meta.env.VITE_API_URL?.trim()),
+    });
+
+    throw new Error(`Missing required environment variable: ${REQUIRED_BACKEND_URL_ENV}`);
+  }
+
+  return configuredBackendUrl;
+}
+
+const configuredBackendUrl = resolveConfiguredBackendUrl();
+const normalizedConfiguredUrl = trimTrailingSlash(configuredBackendUrl);
 
 const apiBaseUrl = normalizedConfiguredUrl.endsWith(API_VERSION_PREFIX)
   ? normalizedConfiguredUrl.slice(0, -API_VERSION_PREFIX.length)
