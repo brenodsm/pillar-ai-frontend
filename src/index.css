@@ -67,6 +67,31 @@
 .tab-btn:hover { color: #2C2E2E; }
 .tab-btn.active { color: #FF9114; border-bottom-color: #FF9114; font-weight: 600; }
 
+.participants-chip:hover {
+  border-color: rgba(255, 145, 20, 0.55) !important;
+  box-shadow: 0 2px 10px rgba(255, 145, 20, 0.14);
+}
+.participants-chip:focus-visible {
+  outline: 2px solid rgba(255, 145, 20, 0.4);
+  outline-offset: 2px;
+}
+
+.danger-icon-btn:hover {
+  background: rgba(224, 64, 64, 0.1) !important;
+  border-color: rgba(224, 64, 64, 0.28) !important;
+  color: #E04040 !important;
+  box-shadow: 0 3px 10px rgba(224, 64, 64, 0.15);
+  transform: translateY(-1px);
+}
+.danger-icon-btn:focus-visible {
+  outline: 2px solid rgba(224, 64, 64, 0.35);
+  outline-offset: 2px;
+}
+.danger-icon-btn:active {
+  transform: translateY(0) scale(0.97);
+  box-shadow: none;
+}
+
 .btn-primary {
   display: inline-flex; align-items: center; justify-content: center; gap: 10px;
   padding: 13px 28px; border: none; border-radius: 12px;

@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { C } from "../constants/colors";
 import { Icon } from "./Icon";
-import type { AppState, ProcessResult } from "../types";
+import type { AppState, Participant, ProcessResult } from "../types";
+import { formatDateToBrDate } from "../utils/dateFormat";
 
 interface TabsPanelProps {
   activeTab: string;
@@ -13,11 +14,14 @@ interface TabsPanelProps {
   ataText: string;
   setAtaText: (text: string) => void;
   transcriptionText: string;
+  participants: Participant[];
   onAiRewrite: (instruction: string) => Promise<void>;
+  onUpdateActionItems: (actionItems: ProcessResult["minutes"]["action_items"]) => Promise<void>;
   isAiRewriting: boolean;
   isAtaConfirmed: boolean;
   isConfirmingAta: boolean;
   onConfirmAta: () => Promise<void>;
+  onOpenParticipantsModal?: () => void;
 }
 
 const ATA_HEADING_LABELS: Record<string, string> = {
@@ -36,6 +40,47 @@ const ATA_HEADING_LABELS: Record<string, string> = {
 
 function normalizeHeading(text: string): string {
   return text.trim().replace(/\s+/g, " ").toLocaleLowerCase("pt-BR");
+}
+
+function toDateInputValue(value?: string): string {
+  if (!value) {
+    return "";
+  }
+  const isoMatch = value.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (isoMatch) {
+    return isoMatch[1];
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "";
+  }
+  return parsed.toISOString().slice(0, 10);
+}
+
+function formatParticipantOption(participant: Participant): string {
+  const name = participant.name?.trim();
+  const email = participant.email?.trim();
+  if (name && email) {
+    return `${name} (${email})`;
+  }
+  return name || email || "";
+}
+
+function getParticipantInitials(participant: Participant): string {
+  const fromName = participant.name
+    .split(" ")
+    .map((word) => word.trim()[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+
+  if (fromName) {
+    return fromName;
+  }
+
+  const fromEmail = participant.email.trim().charAt(0).toUpperCase();
+  return fromEmail || "?";
 }
 
 function renderAtaText(ataText: string) {
@@ -219,9 +264,108 @@ function renderAtaText(ataText: string) {
   );
 }
 
-export function TabsPanel({ activeTab, setActiveTab, notes, setNotes, appState, result, ataText, setAtaText, transcriptionText, onAiRewrite, isAiRewriting, isAtaConfirmed, isConfirmingAta, onConfirmAta }: TabsPanelProps) {
+export function TabsPanel({
+  activeTab,
+  setActiveTab,
+  notes,
+  setNotes,
+  appState,
+  result,
+  ataText,
+  setAtaText,
+  transcriptionText,
+  participants,
+  onAiRewrite,
+  onUpdateActionItems,
+  isAiRewriting,
+  isAtaConfirmed,
+  isConfirmingAta,
+  onConfirmAta,
+  onOpenParticipantsModal,
+}: TabsPanelProps) {
   const [showAiInput, setShowAiInput] = useState(false);
   const [aiInstruction, setAiInstruction] = useState("");
+  const [isEditingActions, setIsEditingActions] = useState(false);
+  const [editableActions, setEditableActions] = useState<ProcessResult["minutes"]["action_items"]>([]);
+  const [isSavingActions, setIsSavingActions] = useState(false);
+  const [actionsEditError, setActionsEditError] = useState<string | null>(null);
+
+  const isAtaLockedByActionEditing = isEditingActions;
+
+  useEffect(() => {
+    if (!isEditingActions) {
+      setEditableActions((result?.minutes.action_items ?? []).map((item) => ({ ...item })));
+    }
+  }, [isEditingActions, result]);
+
+  useEffect(() => {
+    if (isAtaLockedByActionEditing) {
+      setShowAiInput(false);
+      setAiInstruction("");
+    }
+  }, [isAtaLockedByActionEditing]);
+
+  const responsibleOptions = useMemo(() => {
+    const options = new Set<string>();
+
+    participants.forEach((participant) => {
+      const participantOption = formatParticipantOption(participant);
+      if (participantOption) {
+        options.add(participantOption);
+      }
+      if (participant.email?.trim()) {
+        options.add(participant.email.trim());
+      }
+    });
+
+    (result?.minutes.participants ?? []).forEach((participantLabel) => {
+      const normalized = participantLabel.trim();
+      if (normalized) {
+        options.add(normalized);
+      }
+    });
+
+    editableActions.forEach((item) => {
+      const normalized = item.responsible.trim();
+      if (normalized && normalizeHeading(normalized) !== "sem responsável") {
+        options.add(normalized);
+      }
+    });
+
+    return Array.from(options).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [editableActions, participants, result?.minutes.participants]);
+
+  const hasEmptyActionDescription = editableActions.some((item) => !item.description.trim());
+
+  const handleSaveActions = async () => {
+    const normalized = editableActions.map((item) => {
+      const responsible = item.responsible.trim();
+      const normalizedResponsible = normalizeHeading(responsible) === "sem responsável" ? "" : responsible;
+      const deadline = item.deadline?.trim();
+      return {
+        description: item.description.trim(),
+        responsible: normalizedResponsible,
+        deadline: deadline || undefined,
+      };
+    });
+    setIsSavingActions(true);
+    setActionsEditError(null);
+    try {
+      await onUpdateActionItems(normalized);
+      setIsEditingActions(false);
+    } catch (err) {
+      setActionsEditError(err instanceof Error ? err.message : "Erro ao salvar alterações das ações.");
+    } finally {
+      setIsSavingActions(false);
+    }
+  };
+
+  const handleCancelActionEditing = () => {
+    setEditableActions((result?.minutes.action_items ?? []).map((item) => ({ ...item })));
+    setIsEditingActions(false);
+    setActionsEditError(null);
+  };
+
   void setAtaText;
   void isConfirmingAta;
   void onConfirmAta;
@@ -233,7 +377,7 @@ export function TabsPanel({ activeTab, setActiveTab, notes, setNotes, appState, 
       animation: "panelOpen 0.5s cubic-bezier(0.16,1,0.3,1)",
     }}>
       {/* Tabs */}
-      <div style={{ display: "flex", borderBottom: `1px solid ${C.creamDark}`, padding: "0 8px", background: C.bg }}>
+      <div style={{ display: "flex", alignItems: "center", borderBottom: `1px solid ${C.creamDark}`, padding: "0 8px", background: C.bg }}>
         <button className={`tab-btn ${activeTab === "notas" ? "active" : ""}`} onClick={() => setActiveTab("notas")}>
           Notas da Reunião
         </button>
@@ -255,6 +399,125 @@ export function TabsPanel({ activeTab, setActiveTab, notes, setNotes, appState, 
               }}>Nova</span>
             </span>
           </button>
+        )}
+        {result && (
+          <button
+            className={`tab-btn ${activeTab === "acoes" ? "active" : ""}`}
+            onClick={() => setActiveTab("acoes")}
+          >
+            Ações
+          </button>
+        )}
+        {appState === "finished" && result && onOpenParticipantsModal && (
+          <div style={{ marginLeft: "auto", padding: "8px 4px 8px 12px" }}>
+            <button
+              aria-label={`Gerenciar participantes (${participants.length})`}
+              onClick={onOpenParticipantsModal}
+              className="participants-chip"
+              style={{
+                border: `1px solid rgba(255,145,20,0.35)`,
+                background: C.white,
+                borderRadius: 14,
+                padding: "6px 10px 6px 8px",
+                color: C.dark,
+                fontSize: 14,
+                fontWeight: 700,
+                fontFamily: "inherit",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 10,
+                whiteSpace: "nowrap",
+                minHeight: 46,
+                transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+              }}
+            >
+              <span
+                aria-hidden="true"
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 10,
+                  background: C.orange,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <Icon name="plus" size={14} color={C.white} />
+              </span>
+
+              <span className="participants-chip-label">Participantes</span>
+
+              <span
+                aria-hidden="true"
+                style={{ display: "inline-flex", alignItems: "center", marginLeft: 2 }}
+              >
+                {participants.slice(0, 3).map((participant, index) => (
+                  <span
+                    key={participant.email}
+                    style={{
+                      width: 24,
+                      height: 24,
+                      borderRadius: "50%",
+                      marginLeft: index === 0 ? 0 : -7,
+                      border: `1.5px solid ${C.white}`,
+                      background: participant.isOwner ? C.orangeLight : C.grayLighter,
+                      color: participant.isOwner ? C.white : C.gray,
+                      fontSize: 10,
+                      fontWeight: 700,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    {getParticipantInitials(participant)}
+                  </span>
+                ))}
+                {participants.length > 3 && (
+                  <span
+                    style={{
+                      width: 24,
+                      height: 24,
+                      borderRadius: "50%",
+                      marginLeft: -7,
+                      border: `1.5px solid ${C.white}`,
+                      background: C.creamDark,
+                      color: C.grayLight,
+                      fontSize: 10,
+                      fontWeight: 700,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    +{participants.length - 3}
+                  </span>
+                )}
+              </span>
+
+              <span
+                aria-hidden="true"
+                style={{
+                  minWidth: 25,
+                  height: 25,
+                  borderRadius: 8,
+                  background: C.cream,
+                  color: C.orange,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "0 7px",
+                  marginLeft: 2,
+                }}
+              >
+                {participants.length}
+              </span>
+            </button>
+          </div>
         )}
       </div>
 
@@ -336,24 +599,29 @@ export function TabsPanel({ activeTab, setActiveTab, notes, setNotes, appState, 
                 {!isAtaConfirmed && (
                   <button
                     onClick={() => {
+                      if (isAtaLockedByActionEditing) {
+                        return;
+                      }
                       setShowAiInput(!showAiInput);
                       setAiInstruction("");
                     }}
-                    disabled={isAiRewriting}
+                    disabled={isAiRewriting || isAtaLockedByActionEditing}
                     style={{
                       padding: "7px 16px", borderRadius: 8,
                       border: `1px solid ${C.orange}`,
-                      background: showAiInput ? C.orange : `linear-gradient(135deg, ${C.orange}, ${C.orangeDark})`,
-                      cursor: isAiRewriting ? "not-allowed" : "pointer",
+                      background: isAtaLockedByActionEditing
+                        ? C.creamDark
+                        : (showAiInput ? C.orange : `linear-gradient(135deg, ${C.orange}, ${C.orangeDark})`),
+                      cursor: (isAiRewriting || isAtaLockedByActionEditing) ? "not-allowed" : "pointer",
                       fontSize: 12, fontWeight: 600,
                       fontFamily: "inherit",
-                      color: C.white,
+                      color: isAtaLockedByActionEditing ? C.grayLight : C.white,
                       transition: "all 0.2s",
                       display: "inline-flex", alignItems: "center", gap: 6,
-                      boxShadow: `0 2px 8px rgba(255,145,20,0.3)`,
+                      boxShadow: isAtaLockedByActionEditing ? "none" : `0 2px 8px rgba(255,145,20,0.3)`,
                     }}
                   >
-                    <Icon name="sparkles" size={14} color={C.white} />
+                    <Icon name="sparkles" size={14} color={isAtaLockedByActionEditing ? C.grayLight : C.white} />
                     Editar Ata
                   </button>
                 )}
@@ -370,8 +638,23 @@ export function TabsPanel({ activeTab, setActiveTab, notes, setNotes, appState, 
               </div>
             </div>
 
+            {isAtaLockedByActionEditing && (
+              <div style={{
+                border: `1px solid ${C.creamDark}`,
+                background: C.bg,
+                borderRadius: 10,
+                padding: "10px 12px",
+                marginBottom: 16,
+                fontSize: 12.5,
+                color: C.gray,
+              }}
+              >
+                A edição da ata está bloqueada enquanto você edita as ações.
+              </div>
+            )}
+
             {/* AI Edit Input */}
-            {showAiInput && (
+            {showAiInput && !isAtaLockedByActionEditing && (
               <div style={{
                 background: `linear-gradient(135deg, rgba(255,145,20,0.04), rgba(255,200,90,0.06))`,
                 border: `1px solid rgba(255,145,20,0.25)`,
@@ -483,6 +766,253 @@ export function TabsPanel({ activeTab, setActiveTab, notes, setNotes, appState, 
             <div style={{ background: C.bg, borderRadius: 12, padding: "28px 32px", border: `1px solid ${C.creamDark}`, transition: "border-color 0.2s" }}>
               {renderAtaText(ataText)}
             </div>
+          </div>
+        )}
+
+        {/* Ações */}
+        {activeTab === "acoes" && result && (
+          <div style={{ animation: "fadeIn 0.3s ease" }}>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 18 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <Icon name="users" size={18} color={C.orange} />
+                  <span style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>Ações definidas</span>
+                  <span style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: C.darkMid,
+                    background: C.cream,
+                    borderRadius: 99,
+                    padding: "2px 8px",
+                  }}
+                  >
+                    {editableActions.length}
+                  </span>
+                </div>
+                {isEditingActions && (
+                  <span style={{ fontSize: 12.5, color: C.gray }}>
+                    Modo de edição ativo. A ata foi bloqueada para evitar conflito.
+                  </span>
+                )}
+              </div>
+
+              {!isAtaConfirmed && (
+                <div style={{ display: "flex", gap: 8 }}>
+                  {!isEditingActions ? (
+                    <button
+                      onClick={() => {
+                        setActionsEditError(null);
+                        setIsEditingActions(true);
+                      }}
+                      style={{
+                        padding: "7px 16px",
+                        borderRadius: 8,
+                        border: `1px solid ${C.orange}`,
+                        background: `linear-gradient(135deg, ${C.orange}, ${C.orangeDark})`,
+                        cursor: "pointer",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        fontFamily: "inherit",
+                        color: C.white,
+                        transition: "all 0.2s",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        boxShadow: `0 2px 8px rgba(255,145,20,0.3)`,
+                      }}
+                    >
+                      <Icon name="note" size={13} color={C.white} />
+                      Editar ações
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={handleCancelActionEditing}
+                        style={{
+                          padding: "7px 16px",
+                          borderRadius: 8,
+                          border: `1px solid ${C.creamDark}`,
+                          background: C.white,
+                          cursor: "pointer",
+                          fontSize: 12,
+                          fontWeight: 600,
+                          fontFamily: "inherit",
+                          color: C.darkMid,
+                          transition: "all 0.2s",
+                        }}
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        onClick={() => { void handleSaveActions(); }}
+                        disabled={isAiRewriting || hasEmptyActionDescription || isSavingActions}
+                        style={{
+                          padding: "7px 16px",
+                          borderRadius: 8,
+                          border: "none",
+                          background: (isAiRewriting || hasEmptyActionDescription || isSavingActions)
+                            ? C.creamDark
+                            : `linear-gradient(135deg, ${C.orange}, ${C.orangeDark})`,
+                          cursor: (isAiRewriting || hasEmptyActionDescription || isSavingActions) ? "not-allowed" : "pointer",
+                          fontSize: 12,
+                          fontWeight: 600,
+                          fontFamily: "inherit",
+                          color: (isAiRewriting || hasEmptyActionDescription || isSavingActions) ? C.grayLight : C.white,
+                          transition: "all 0.2s",
+                        }}
+                      >
+                        {isSavingActions ? "Salvando..." : "Salvar ações"}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {actionsEditError && (
+              <div style={{
+                border: "1px solid rgba(224,64,64,0.25)",
+                background: "rgba(224,64,64,0.08)",
+                color: C.redStop,
+                borderRadius: 10,
+                padding: "10px 12px",
+                marginBottom: 12,
+                fontSize: 12.5,
+              }}
+              >
+                {actionsEditError}
+              </div>
+            )}
+
+            {editableActions.length === 0 ? (
+              <div style={{
+                background: C.bg,
+                borderRadius: 12,
+                border: `1px solid ${C.creamDark}`,
+                padding: "24px 18px",
+                textAlign: "center",
+                color: C.grayLight,
+                fontSize: 13.5,
+              }}
+              >
+                Nenhuma ação foi identificada nesta ata.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {editableActions.map((action, index) => (
+                  <div
+                    key={`action-item-${index}`}
+                    style={{
+                      background: C.white,
+                      borderRadius: 12,
+                      border: `1px solid ${C.creamDark}`,
+                      padding: "14px 16px",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 10,
+                    }}
+                  >
+                    <div style={{ fontSize: 12, fontWeight: 700, color: C.gray, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      Ação {index + 1}
+                    </div>
+
+                    {isEditingActions ? (
+                      <>
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: C.grayLight, marginBottom: 4 }}>Descrição</div>
+                          <textarea
+                            value={action.description}
+                            onChange={(event) => {
+                              const value = event.target.value;
+                              setEditableActions((prev) => prev.map((item, itemIndex) => (
+                                itemIndex === index ? { ...item, description: value } : item
+                              )));
+                            }}
+                            placeholder="Descreva a ação"
+                            style={{ minHeight: 72, resize: "vertical" }}
+                          />
+                        </div>
+
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 170px", gap: 10 }}>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: C.grayLight, marginBottom: 4 }}>Responsável</div>
+                            <select
+                              value={action.responsible || ""}
+                              onChange={(event) => {
+                                const value = event.target.value;
+                                setEditableActions((prev) => prev.map((item, itemIndex) => (
+                                  itemIndex === index ? { ...item, responsible: value } : item
+                                )));
+                              }}
+                              style={{
+                                width: "100%",
+                                borderRadius: 8,
+                                border: `1px solid ${C.creamDark}`,
+                                background: C.white,
+                                color: C.dark,
+                                padding: "10px 12px",
+                                fontFamily: "inherit",
+                                fontSize: 13,
+                                outline: "none",
+                              }}
+                            >
+                              <option value="">Sem responsável</option>
+                              {responsibleOptions.map((option) => (
+                                <option key={option} value={option}>
+                                  {option}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: C.grayLight, marginBottom: 4 }}>Prazo</div>
+                            <input
+                              type="date"
+                              value={toDateInputValue(action.deadline)}
+                              onChange={(event) => {
+                                const value = event.target.value.trim();
+                                setEditableActions((prev) => prev.map((item, itemIndex) => (
+                                  itemIndex === index
+                                    ? { ...item, deadline: value || undefined }
+                                    : item
+                                )));
+                              }}
+                              style={{
+                                width: "100%",
+                                borderRadius: 8,
+                                border: `1px solid ${C.creamDark}`,
+                                background: C.white,
+                                color: C.dark,
+                                padding: "10px 12px",
+                                fontFamily: "inherit",
+                                fontSize: 13,
+                                outline: "none",
+                                boxSizing: "border-box",
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div style={{ fontSize: 14.5, color: C.dark, lineHeight: 1.5 }}>
+                          <strong>Ação:</strong> {action.description}
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 12 }}>
+                          <div style={{ fontSize: 13, color: C.gray }}>
+                            <strong>Responsável:</strong> {action.responsible || "Sem responsável"}
+                          </div>
+                          <div style={{ fontSize: 13, color: C.gray }}>
+                            <strong>Prazo:</strong> {action.deadline ? formatDateToBrDate(action.deadline) : "Sem prazo"}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

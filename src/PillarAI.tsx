@@ -15,6 +15,11 @@ import { ActionsView } from "./views/ActionsView";
 import { MeetingDetailModal } from "./components/MeetingDetailModal";
 import type { AppState, ProcessResult, StoredMeeting, Participant, CalendarMeeting, SessionUser } from "./types";
 import type { ParticipantResponse } from "./api/types/swagger";
+import {
+  getInitialPillarUiState,
+  persistPillarUiState,
+  type SidebarView,
+} from "./pillarUiStateStorage";
 
 const DEFAULT_OWNER: Participant = {
   name: "Breno Moreira",
@@ -38,16 +43,19 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
     notes: notesService,
     actions: actionsService,
   } = useAppServices();
-  const [sidebarView, setSidebarView] = useState("home");
-  const [appState, setAppState] = useState<AppState>("idle");
+  const restoredUiState = useMemo(() => getInitialPillarUiState(), []);
+  const [sidebarView, setSidebarView] = useState<SidebarView>(restoredUiState?.sidebarView ?? "home");
+  const [appState, setAppState] = useState<AppState>(restoredUiState?.appState ?? "idle");
   const [startTime, setStartTime] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState("notas");
-  const [notes, setNotes] = useState("");
-  const [showPanel, setShowPanel] = useState(false);
-  const [result, setResult] = useState<ProcessResult | null>(null);
+  const [activeTab, setActiveTab] = useState(restoredUiState?.activeTab ?? "notas");
+  const [notes, setNotes] = useState(restoredUiState?.notes ?? "");
+  const [showPanel, setShowPanel] = useState(restoredUiState?.showPanel ?? false);
+  const [result, setResult] = useState<ProcessResult | null>(restoredUiState?.result ?? null);
   const [error, setError] = useState<string | null>(null);
-  const [participants, setParticipants] = useState<Participant[]>([DEFAULT_OWNER]);
-  const [emailInput, setEmailInput] = useState("");
+  const [participants, setParticipants] = useState<Participant[]>(() =>
+    restoredUiState?.participants.length ? restoredUiState.participants : [DEFAULT_OWNER]
+  );
+  const [emailInput, setEmailInput] = useState(restoredUiState?.emailInput ?? "");
   const [emailSent, setEmailSent] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -59,19 +67,28 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
       return [];
     }
   });
-  const [selectedMeeting, setSelectedMeeting] = useState<StoredMeeting | null>(null);
+  const [selectedMeeting, setSelectedMeeting] = useState<StoredMeeting | null>(() => {
+    const selectedMeetingId = restoredUiState?.selectedMeetingId;
+    if (selectedMeetingId === null || selectedMeetingId === undefined) {
+      return null;
+    }
+
+    return pastMeetings.find((meeting) => meeting.id === selectedMeetingId) ?? null;
+  });
   const [calendarMeeting, setCalendarMeeting] = useState<CalendarMeeting | null>(null);
   const [calendarMeetings, setCalendarMeetings] = useState<CalendarMeeting[]>([]);
-  const [meetingContext, setMeetingContext] = useState<string | null>(null);
-  const [ataText, setAtaText] = useState("");
+  const [meetingContext, setMeetingContext] = useState<string | null>(restoredUiState?.meetingContext ?? null);
+  const [ataText, setAtaText] = useState(restoredUiState?.ataText ?? "");
   const [isAiRewriting, setIsAiRewriting] = useState(false);
   const [showSystemAudioHint, setShowSystemAudioHint] = useState(false);
-  const [isAtaConfirmed, setIsAtaConfirmed] = useState(false);
+  const [isAtaConfirmed, setIsAtaConfirmed] = useState(restoredUiState?.isAtaConfirmed ?? false);
   const [isConfirmingAta, setIsConfirmingAta] = useState(false);
-  const [currentMeetingId, setCurrentMeetingId] = useState<string | null>(null);
-  const [currentMinutesId, setCurrentMinutesId] = useState<string | null>(null);
+  const [currentMeetingId, setCurrentMeetingId] = useState<string | null>(restoredUiState?.currentMeetingId ?? null);
+  const [currentMinutesId, setCurrentMinutesId] = useState<string | null>(restoredUiState?.currentMinutesId ?? null);
   const [currentMeetingSnapshot, setCurrentMeetingSnapshot] = useState<MeetingSnapshot | null>(null);
-  const [selectedCalendarEventId, setSelectedCalendarEventId] = useState<string | null>(null);
+  const [selectedCalendarEventId, setSelectedCalendarEventId] = useState<string | null>(
+    restoredUiState?.selectedCalendarEventId ?? null
+  );
   const [actionsRefreshToken, setActionsRefreshToken] = useState(0);
 
   const owner: Participant = useMemo(
@@ -82,8 +99,15 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
   );
 
   useEffect(() => {
-    setParticipants([owner]);
-  }, [user?.email]); // eslint-disable-line react-hooks/exhaustive-deps
+    setParticipants((previousParticipants) => {
+      const nonOwnerParticipants = previousParticipants.filter((participant) => {
+        const isSameAsOwner = participant.email.toLowerCase() === owner.email.toLowerCase();
+        return !participant.isOwner && !isSameAsOwner;
+      });
+
+      return [owner, ...nonOwnerParticipants];
+    });
+  }, [owner]);
 
   useEffect(() => {
     try {
@@ -92,6 +116,58 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
       // localStorage cheio ou indisponível — ignorar silenciosamente
     }
   }, [pastMeetings]);
+
+  useEffect(() => {
+    persistPillarUiState({
+      sidebarView,
+      appState: appState === "finished" ? "finished" : "idle",
+      activeTab,
+      showPanel,
+      result,
+      notes,
+      participants,
+      emailInput,
+      meetingContext,
+      ataText,
+      isAtaConfirmed,
+      currentMeetingId,
+      currentMinutesId,
+      selectedCalendarEventId,
+      selectedMeetingId: selectedMeeting?.id ?? null,
+    });
+  }, [
+    activeTab,
+    appState,
+    ataText,
+    currentMeetingId,
+    currentMinutesId,
+    emailInput,
+    isAtaConfirmed,
+    meetingContext,
+    notes,
+    participants,
+    result,
+    selectedCalendarEventId,
+    selectedMeeting?.id,
+    showPanel,
+    sidebarView,
+  ]);
+
+  useEffect(() => {
+    if (!selectedMeeting) {
+      return;
+    }
+
+    const updatedMeeting = pastMeetings.find((meeting) => meeting.id === selectedMeeting.id);
+    if (!updatedMeeting) {
+      setSelectedMeeting(null);
+      return;
+    }
+
+    if (updatedMeeting !== selectedMeeting) {
+      setSelectedMeeting(updatedMeeting);
+    }
+  }, [pastMeetings, selectedMeeting]);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -546,6 +622,128 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
     }));
   }, [selectedMeeting]);
 
+  const handleUpdateActionItems = useCallback(async (actionItems: ProcessResult["minutes"]["action_items"]) => {
+    if (!result) {
+      return;
+    }
+
+    const applyMinutesUpdate = (nextMinutes: ProcessResult["minutes"], nextMinutesId?: string) => {
+      const nextAtaText = formatMinutesToAta(nextMinutes);
+
+      setResult((prevResult) => {
+        if (!prevResult) {
+          return prevResult;
+        }
+        return {
+          ...prevResult,
+          minutes: nextMinutes,
+          minutes_id: nextMinutesId ?? prevResult.minutes_id,
+        };
+      });
+
+      if (nextMinutesId) {
+        setCurrentMinutesId(nextMinutesId);
+      }
+
+      setAtaText(nextAtaText);
+      setPastMeetings((prevMeetings) => prevMeetings.map((meeting) => {
+        const targetId = selectedMeeting?.id ?? prevMeetings[0]?.id;
+        if (meeting.id !== targetId) {
+          return meeting;
+        }
+
+        return {
+          ...meeting,
+          editedAtaText: nextAtaText,
+          result: {
+            ...meeting.result,
+            minutes: nextMinutes,
+            minutes_id: nextMinutesId ?? meeting.result.minutes_id,
+          },
+        };
+      }));
+    };
+
+    const normalizedItems = actionItems.map((item) => ({
+      description: item.description.trim(),
+      responsible: item.responsible.trim(),
+      deadline: item.deadline?.trim() || undefined,
+    }));
+
+    if (!currentMeetingId) {
+      applyMinutesUpdate({ ...result.minutes, action_items: normalizedItems });
+      return;
+    }
+
+    setError(null);
+
+    try {
+      const actionLines = normalizedItems.map((item, index) => {
+        const responsibleLabel = item.responsible || "Sem responsável";
+        const deadlineLabel = item.deadline || "Sem prazo";
+        return `${index + 1}. Responsável: ${responsibleLabel}; Ação: ${item.description}; Prazo: ${deadlineLabel}.`;
+      });
+
+      const instruction = actionLines.length > 0
+        ? [
+          "Atualize somente a seção \"Ações definidas\" da ata.",
+          "Substitua todas as ações atuais pela lista abaixo.",
+          ...actionLines,
+          "Mantenha resumo, tópicos, decisões e próximos passos sem alterações.",
+        ].join("\n")
+        : [
+          "Atualize somente a seção \"Ações definidas\" da ata.",
+          "Remova todas as ações desta seção.",
+          "Mantenha resumo, tópicos, decisões e próximos passos sem alterações.",
+        ].join("\n");
+
+      const updatedMinutes = await minutesService.editMeetingMinutes(currentMeetingId, instruction);
+      let snapshot = currentMeetingSnapshot ?? {
+        title: result.minutes.title || "Reunião sem título",
+        createdAt: new Date().toISOString(),
+        participants: [],
+      };
+
+      if (snapshot.participants.length === 0) {
+        try {
+          const latestMeeting = await meetingsService.getMeetingById(currentMeetingId);
+          snapshot = {
+            title: latestMeeting.title,
+            scheduledAt: latestMeeting.scheduledAt,
+            createdAt: latestMeeting.createdAt,
+            participants: latestMeeting.participants || [],
+          };
+          setCurrentMeetingSnapshot(snapshot);
+        } catch {
+          // If this lookup fails, keep rendering with the best snapshot we already have.
+        }
+      }
+
+      const mappedMinutes = mapMinutesResponseToMinutes(
+        {
+          title: snapshot.title,
+          createdAt: snapshot.createdAt,
+          scheduledAt: snapshot.scheduledAt,
+        },
+        updatedMinutes,
+        snapshot.participants,
+      );
+
+      applyMinutesUpdate(mappedMinutes, updatedMinutes.id);
+    } catch (err) {
+      if (isApiError(err) && err.status === 409) {
+        try {
+          await refreshMeetingMinutesState(currentMeetingId);
+        } catch {
+          // Keep UX resilient even if refresh fails.
+        }
+      }
+      const message = getApiErrorMessage(err, "Erro ao salvar alterações das ações.");
+      setError(message);
+      throw new Error(message);
+    }
+  }, [currentMeetingId, currentMeetingSnapshot, meetingsService, minutesService, refreshMeetingMinutesState, result, selectedMeeting?.id]);
+
   const handleNotesChange = useCallback((text: string) => {
     setNotes(text);
     setPastMeetings((prev) => prev.map((m) => {
@@ -758,6 +956,7 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
               onStop={handleStop}
               onReset={resetRecording}
               onAiRewrite={handleAiRewrite}
+              onUpdateActionItems={handleUpdateActionItems}
               emailInput={emailInput}
               setEmailInput={setEmailInput}
               onAddParticipant={addParticipant}

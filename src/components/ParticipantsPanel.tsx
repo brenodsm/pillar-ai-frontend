@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { C } from "../constants/colors";
 import { Icon } from "./Icon";
 import type { Participant } from "../types";
@@ -14,21 +15,32 @@ interface ParticipantsPanelProps {
   onKeyDown: (e: React.KeyboardEvent) => void;
   onSend: () => void;
   isAtaConfirmed: boolean;
+  inModal?: boolean;
 }
 
 export function ParticipantsPanel({
   participants, emailInput, emailSent, isSending, sendError,
   setEmailInput, onAdd, onRemove, onKeyDown, onSend, isAtaConfirmed,
+  inModal = false,
 }: ParticipantsPanelProps) {
   const emailValid = emailInput.trim() !== "" && emailInput.includes("@");
+  const [isAddButtonHovered, setIsAddButtonHovered] = useState(false);
+  const addButtonBackground = emailValid
+    ? `linear-gradient(135deg, ${C.orange}, ${C.orangeDark})`
+    : (isAddButtonHovered ? "rgba(255,145,20,0.14)" : C.creamDark);
+  const addButtonIconColor = emailValid
+    ? C.white
+    : (isAddButtonHovered ? C.orange : C.grayLight);
 
   return (
     <div style={{
-      background: C.white, borderRadius: 16, padding: "24px 28px",
-      border: `1px solid ${C.creamDark}`,
-      boxShadow: "0 2px 12px rgba(0,0,0,0.03)",
-      marginTop: 24,
-      animation: "panelOpen 0.5s cubic-bezier(0.16,1,0.3,1)",
+      background: inModal ? "transparent" : C.white,
+      borderRadius: inModal ? 0 : 16,
+      padding: inModal ? "2px 0 0" : "24px 28px",
+      border: inModal ? "none" : `1px solid ${C.creamDark}`,
+      boxShadow: inModal ? "none" : "0 2px 12px rgba(0,0,0,0.03)",
+      marginTop: inModal ? 0 : 24,
+      animation: inModal ? "none" : "panelOpen 0.5s cubic-bezier(0.16,1,0.3,1)",
     }}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
@@ -76,15 +88,18 @@ export function ParticipantsPanel({
         </div>
         <button
           onClick={onAdd}
+          onMouseEnter={() => setIsAddButtonHovered(true)}
+          onMouseLeave={() => setIsAddButtonHovered(false)}
           style={{
-            width: 44, height: 44, borderRadius: 10, border: "none",
-            background: emailValid ? `linear-gradient(135deg, ${C.orange}, ${C.orangeDark})` : C.creamDark,
-            cursor: emailValid ? "pointer" : "default",
+            width: 44, height: 44, borderRadius: 10,
+            border: `1px solid ${isAddButtonHovered ? "rgba(255,145,20,0.35)" : "transparent"}`,
+            background: addButtonBackground,
+            cursor: "pointer",
             display: "flex", alignItems: "center", justifyContent: "center",
             transition: "all 0.2s ease", flexShrink: 0,
           }}
         >
-          <Icon name="plus" size={18} color={emailValid ? C.white : C.grayLight} />
+          <Icon name="plus" size={18} color={addButtonIconColor} />
         </button>
       </div>
 
@@ -127,17 +142,19 @@ export function ParticipantsPanel({
             </div>
             {!p.isOwner && (
               <button
+                className="danger-icon-btn"
                 onClick={() => onRemove(p.email)}
                 style={{
-                  width: 28, height: 28, borderRadius: 7, border: "none",
+                  width: 28, height: 28, borderRadius: 7, border: "1px solid transparent",
                   background: "transparent", cursor: "pointer",
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  transition: "all 0.15s ease", flexShrink: 0,
+                  transition: "background-color 240ms cubic-bezier(0.22, 1, 0.36, 1), border-color 240ms cubic-bezier(0.22, 1, 0.36, 1), color 200ms ease, box-shadow 240ms cubic-bezier(0.22, 1, 0.36, 1), transform 180ms ease",
+                  transform: "translateY(0)",
+                  flexShrink: 0,
+                  color: C.grayLight,
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(224,64,64,0.08)")}
-                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
               >
-                <Icon name="x" size={14} color={C.grayLight} />
+                <Icon name="x" size={14} color="currentColor" />
               </button>
             )}
           </div>
