@@ -15,6 +15,11 @@ import { ActionsView } from "./views/ActionsView";
 import { MeetingDetailModal } from "./components/MeetingDetailModal";
 import type { AppState, ProcessResult, StoredMeeting, Participant, CalendarMeeting, SessionUser } from "./types";
 import type { ParticipantResponse } from "./api/types/swagger";
+import {
+  getInitialPillarUiState,
+  persistPillarUiState,
+  type SidebarView,
+} from "./pillarUiStateStorage";
 
 const DEFAULT_OWNER: Participant = {
   name: "Breno Moreira",
@@ -38,16 +43,19 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
     notes: notesService,
     actions: actionsService,
   } = useAppServices();
-  const [sidebarView, setSidebarView] = useState("home");
-  const [appState, setAppState] = useState<AppState>("idle");
+  const restoredUiState = useMemo(() => getInitialPillarUiState(), []);
+  const [sidebarView, setSidebarView] = useState<SidebarView>(restoredUiState?.sidebarView ?? "home");
+  const [appState, setAppState] = useState<AppState>(restoredUiState?.appState ?? "idle");
   const [startTime, setStartTime] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState("notas");
-  const [notes, setNotes] = useState("");
-  const [showPanel, setShowPanel] = useState(false);
-  const [result, setResult] = useState<ProcessResult | null>(null);
+  const [activeTab, setActiveTab] = useState(restoredUiState?.activeTab ?? "notas");
+  const [notes, setNotes] = useState(restoredUiState?.notes ?? "");
+  const [showPanel, setShowPanel] = useState(restoredUiState?.showPanel ?? false);
+  const [result, setResult] = useState<ProcessResult | null>(restoredUiState?.result ?? null);
   const [error, setError] = useState<string | null>(null);
-  const [participants, setParticipants] = useState<Participant[]>([DEFAULT_OWNER]);
-  const [emailInput, setEmailInput] = useState("");
+  const [participants, setParticipants] = useState<Participant[]>(() =>
+    restoredUiState?.participants.length ? restoredUiState.participants : [DEFAULT_OWNER]
+  );
+  const [emailInput, setEmailInput] = useState(restoredUiState?.emailInput ?? "");
   const [emailSent, setEmailSent] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -59,19 +67,28 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
       return [];
     }
   });
-  const [selectedMeeting, setSelectedMeeting] = useState<StoredMeeting | null>(null);
+  const [selectedMeeting, setSelectedMeeting] = useState<StoredMeeting | null>(() => {
+    const selectedMeetingId = restoredUiState?.selectedMeetingId;
+    if (selectedMeetingId === null || selectedMeetingId === undefined) {
+      return null;
+    }
+
+    return pastMeetings.find((meeting) => meeting.id === selectedMeetingId) ?? null;
+  });
   const [calendarMeeting, setCalendarMeeting] = useState<CalendarMeeting | null>(null);
   const [calendarMeetings, setCalendarMeetings] = useState<CalendarMeeting[]>([]);
-  const [meetingContext, setMeetingContext] = useState<string | null>(null);
-  const [ataText, setAtaText] = useState("");
+  const [meetingContext, setMeetingContext] = useState<string | null>(restoredUiState?.meetingContext ?? null);
+  const [ataText, setAtaText] = useState(restoredUiState?.ataText ?? "");
   const [isAiRewriting, setIsAiRewriting] = useState(false);
   const [showSystemAudioHint, setShowSystemAudioHint] = useState(false);
-  const [isAtaConfirmed, setIsAtaConfirmed] = useState(false);
+  const [isAtaConfirmed, setIsAtaConfirmed] = useState(restoredUiState?.isAtaConfirmed ?? false);
   const [isConfirmingAta, setIsConfirmingAta] = useState(false);
-  const [currentMeetingId, setCurrentMeetingId] = useState<string | null>(null);
-  const [currentMinutesId, setCurrentMinutesId] = useState<string | null>(null);
+  const [currentMeetingId, setCurrentMeetingId] = useState<string | null>(restoredUiState?.currentMeetingId ?? null);
+  const [currentMinutesId, setCurrentMinutesId] = useState<string | null>(restoredUiState?.currentMinutesId ?? null);
   const [currentMeetingSnapshot, setCurrentMeetingSnapshot] = useState<MeetingSnapshot | null>(null);
-  const [selectedCalendarEventId, setSelectedCalendarEventId] = useState<string | null>(null);
+  const [selectedCalendarEventId, setSelectedCalendarEventId] = useState<string | null>(
+    restoredUiState?.selectedCalendarEventId ?? null
+  );
   const [actionsRefreshToken, setActionsRefreshToken] = useState(0);
 
   const owner: Participant = useMemo(
@@ -82,8 +99,15 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
   );
 
   useEffect(() => {
-    setParticipants([owner]);
-  }, [user?.email]); // eslint-disable-line react-hooks/exhaustive-deps
+    setParticipants((previousParticipants) => {
+      const nonOwnerParticipants = previousParticipants.filter((participant) => {
+        const isSameAsOwner = participant.email.toLowerCase() === owner.email.toLowerCase();
+        return !participant.isOwner && !isSameAsOwner;
+      });
+
+      return [owner, ...nonOwnerParticipants];
+    });
+  }, [owner]);
 
   useEffect(() => {
     try {
@@ -92,6 +116,58 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
       // localStorage cheio ou indisponível — ignorar silenciosamente
     }
   }, [pastMeetings]);
+
+  useEffect(() => {
+    persistPillarUiState({
+      sidebarView,
+      appState: appState === "finished" ? "finished" : "idle",
+      activeTab,
+      showPanel,
+      result,
+      notes,
+      participants,
+      emailInput,
+      meetingContext,
+      ataText,
+      isAtaConfirmed,
+      currentMeetingId,
+      currentMinutesId,
+      selectedCalendarEventId,
+      selectedMeetingId: selectedMeeting?.id ?? null,
+    });
+  }, [
+    activeTab,
+    appState,
+    ataText,
+    currentMeetingId,
+    currentMinutesId,
+    emailInput,
+    isAtaConfirmed,
+    meetingContext,
+    notes,
+    participants,
+    result,
+    selectedCalendarEventId,
+    selectedMeeting?.id,
+    showPanel,
+    sidebarView,
+  ]);
+
+  useEffect(() => {
+    if (!selectedMeeting) {
+      return;
+    }
+
+    const updatedMeeting = pastMeetings.find((meeting) => meeting.id === selectedMeeting.id);
+    if (!updatedMeeting) {
+      setSelectedMeeting(null);
+      return;
+    }
+
+    if (updatedMeeting !== selectedMeeting) {
+      setSelectedMeeting(updatedMeeting);
+    }
+  }, [pastMeetings, selectedMeeting]);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);

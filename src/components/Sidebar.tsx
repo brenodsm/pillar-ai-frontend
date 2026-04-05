@@ -2,10 +2,11 @@ import { C } from "../constants/colors";
 import { Icon } from "./Icon";
 import { RottasLogo } from "./RottasLogo";
 import type { StoredMeeting, SessionUser } from "../types";
+import type { SidebarView } from "../pillarUiStateStorage";
 
 interface SidebarProps {
-  sidebarView: string;
-  setSidebarView: (view: string) => void;
+  sidebarView: SidebarView;
+  setSidebarView: (view: SidebarView) => void;
   pastMeetings: StoredMeeting[];
   onViewMeeting: (meeting: StoredMeeting) => void;
   onReset: () => void;
@@ -13,7 +14,7 @@ interface SidebarProps {
   user?: SessionUser | null;
 }
 
-const sidebarItems = [
+const sidebarItems: Array<{ id: SidebarView; label: string; icon: string }> = [
   { id: "home", label: "Início", icon: "home" },
   { id: "calendario", label: "Calendário", icon: "calendar" },
   { id: "meetings", label: "Reuniões", icon: "meetings" },
