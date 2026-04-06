@@ -1,8 +1,6 @@
-import type { StoredMeeting } from "../../types";
-
 export interface MeetingsListItem {
   key: string;
-  source: "api" | "local";
+  source: "api";
   meetingId: string | null;
   title: string;
   date: string;
@@ -10,5 +8,4 @@ export interface MeetingsListItem {
   durationLabel: string;
   participantsLabel: string;
   hasAta: boolean;
-  storedMeeting?: StoredMeeting;
 }
