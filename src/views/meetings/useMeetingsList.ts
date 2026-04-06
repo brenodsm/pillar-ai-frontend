@@ -2,10 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MeetingListItemResponse } from "../../api/types/swagger";
 import { getApiErrorMessage } from "../../services/apiErrorMessage";
 import { useAppServices } from "../../services/context";
-import type { StoredMeeting } from "../../types";
 import { buildMeetingsListItems } from "./meetingListMapper";
 
-export function useMeetingsList(storedMeetings: StoredMeeting[]) {
+export function useMeetingsList() {
   const { meetings: meetingsService } = useAppServices();
   const [apiMeetings, setApiMeetings] = useState<MeetingListItemResponse[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,10 +43,7 @@ export function useMeetingsList(storedMeetings: StoredMeeting[]) {
     };
   }, [reload]);
 
-  const meetings = useMemo(
-    () => buildMeetingsListItems(apiMeetings, storedMeetings),
-    [apiMeetings, storedMeetings],
-  );
+  const meetings = useMemo(() => buildMeetingsListItems(apiMeetings), [apiMeetings]);
 
   return {
     meetings,

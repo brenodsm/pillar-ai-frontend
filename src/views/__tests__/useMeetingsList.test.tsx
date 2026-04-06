@@ -37,7 +37,7 @@ describe("useMeetingsList", () => {
       },
     ]);
 
-    const { result } = renderHook(() => useMeetingsList([]));
+    const { result } = renderHook(() => useMeetingsList());
 
     await waitFor(() => {
       expect(result.current.loading).toBe(false);
@@ -60,7 +60,7 @@ describe("useMeetingsList", () => {
         }),
     );
 
-    const { result } = renderHook(() => useMeetingsList([]));
+    const { result } = renderHook(() => useMeetingsList());
 
     await waitFor(() => {
       expect(listMeetingsMock).toHaveBeenCalledTimes(1);

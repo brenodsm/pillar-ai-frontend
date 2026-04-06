@@ -1,14 +1,11 @@
 import { useCallback, useMemo, useState } from "react";
 import { C } from "../constants/colors";
 import { Icon } from "../components/Icon";
-import type { StoredMeeting } from "../types";
 import type { MeetingsListItem } from "./meetings/types";
 import { useMeetingsList } from "./meetings/useMeetingsList";
 
 interface MeetingsViewProps {
   sidebarView: string;
-  storedMeetings: StoredMeeting[];
-  onViewMeeting: (meeting: StoredMeeting) => void;
   onOpenMeetingById: (meetingId: string) => Promise<void>;
   onGoHome: () => void;
 }
@@ -21,12 +18,10 @@ const viewTitles: Record<string, string> = {
 
 export function MeetingsView({
   sidebarView,
-  storedMeetings,
-  onViewMeeting,
   onOpenMeetingById,
   onGoHome,
 }: MeetingsViewProps) {
-  const { meetings, loading, error, reload } = useMeetingsList(storedMeetings);
+  const { meetings, loading, error, reload } = useMeetingsList();
   const [openingMeetingKey, setOpeningMeetingKey] = useState<string | null>(null);
 
   const displayList = useMemo(() => {
@@ -37,11 +32,6 @@ export function MeetingsView({
   }, [meetings, sidebarView]);
 
   const handleOpenMeeting = useCallback(async (meeting: MeetingsListItem) => {
-    if (meeting.storedMeeting) {
-      onViewMeeting(meeting.storedMeeting);
-      return;
-    }
-
     if (!meeting.meetingId) {
       return;
     }
@@ -52,7 +42,7 @@ export function MeetingsView({
     } finally {
       setOpeningMeetingKey(null);
     }
-  }, [onOpenMeetingById, onViewMeeting]);
+  }, [onOpenMeetingById]);
 
   return (
     <div style={{ maxWidth: 900, margin: "0 auto" }}>
@@ -118,7 +108,7 @@ export function MeetingsView({
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           {displayList.map((meeting) => {
             const isOpening = openingMeetingKey === meeting.key;
-            const isDisabled = isOpening || (!meeting.storedMeeting && !meeting.meetingId);
+            const isDisabled = isOpening || !meeting.meetingId;
 
             return (
               <button
