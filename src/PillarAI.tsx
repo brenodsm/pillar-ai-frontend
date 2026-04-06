@@ -14,7 +14,7 @@ import { CalendarView } from "./views/CalendarView";
 import { ActionsView } from "./views/ActionsView";
 import { MeetingDetailModal } from "./components/MeetingDetailModal";
 import type { AppState, ProcessResult, StoredMeeting, Participant, CalendarMeeting, SessionUser } from "./types";
-import type { ParticipantResponse } from "./api/types/swagger";
+import type { MeetingResponse, ParticipantResponse, TranscriptionResponse } from "./api/types/swagger";
 import {
   getInitialPillarUiState,
   persistPillarUiState,
@@ -32,6 +32,56 @@ interface MeetingSnapshot {
   scheduledAt?: string;
   createdAt: string;
   participants: ParticipantResponse[];
+}
+
+function formatStoredMeetingDate(isoDate: string): string {
+  const parsedDate = Date.parse(isoDate);
+  if (Number.isNaN(parsedDate)) {
+    return "-";
+  }
+
+  return new Date(parsedDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function mapParticipantToLabel(participant: ParticipantResponse): string {
+  const name = participant.name?.trim();
+  if (name) {
+    return name;
+  }
+
+  const email = participant.email?.trim();
+  if (email) {
+    return email;
+  }
+
+  return "";
+}
+
+function buildFallbackProcessResult(
+  meeting: MeetingResponse,
+  transcription: TranscriptionResponse,
+): ProcessResult {
+  return {
+    meeting_id: meeting.id,
+    minutes_id: null,
+    transcription: {
+      text: transcription.transcription,
+      language: "unknown",
+      segments: [],
+    },
+    minutes: {
+      title: meeting.title || "Reunião sem título",
+      date: meeting.scheduledAt || meeting.createdAt,
+      participants: (meeting.participants || [])
+        .map(mapParticipantToLabel)
+        .filter((participant): participant is string => Boolean(participant)),
+      summary: "",
+      topics: [],
+      action_items: [],
+      decisions: [],
+      next_steps: "",
+    },
+  };
 }
 
 export default function PillarAI({ onLogout, user }: { onLogout?: () => void; user?: SessionUser | null }) {
@@ -90,6 +140,7 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
     restoredUiState?.selectedCalendarEventId ?? null
   );
   const [actionsRefreshToken, setActionsRefreshToken] = useState(0);
+  const pastMeetingsRef = useRef<StoredMeeting[]>(pastMeetings);
 
   const owner: Participant = useMemo(
     () => user
@@ -97,6 +148,10 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
       : DEFAULT_OWNER,
     [user?.email, user?.display_name],
   );
+
+  useEffect(() => {
+    pastMeetingsRef.current = pastMeetings;
+  }, [pastMeetings]);
 
   useEffect(() => {
     setParticipants((previousParticipants) => {
@@ -876,6 +931,78 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
     setActiveTab("transcricao");
   }, []);
 
+  const openMeetingById = useCallback(async (meetingId: string) => {
+    setError(null);
+    const existingMeeting = pastMeetingsRef.current.find((meeting) => meeting.result.meeting_id === meetingId);
+
+    try {
+      const meeting = await meetingsService.getMeetingById(meetingId);
+      const [minutes, transcription] = await Promise.all([
+        minutesService.getMeetingMinutes(meetingId).catch((err) => {
+          if (isApiError(err) && err.status === 404) {
+            return null;
+          }
+          throw err;
+        }),
+        transcriptionService.getMeetingTranscription(meetingId).catch((err) => {
+          if (isApiError(err) && err.status === 404) {
+            return {
+              meetingId,
+              transcription: "",
+            } satisfies TranscriptionResponse;
+          }
+          throw err;
+        }),
+      ]);
+
+      const resultFromApi = minutes
+        ? toProcessResultViewModel(meeting, minutes, transcription)
+        : buildFallbackProcessResult(meeting, transcription);
+      const nextStoredMeeting: StoredMeeting = {
+        id: existingMeeting?.id ?? Date.now(),
+        title: resultFromApi.minutes.title || meeting.title || "Reunião sem título",
+        date: formatStoredMeetingDate(meeting.scheduledAt || meeting.createdAt),
+        duration: existingMeeting?.duration ?? "-",
+        participants: existingMeeting?.participants ?? Math.max(
+          meeting.participants?.length || 0,
+          resultFromApi.minutes.participants.length || 0,
+          1,
+        ),
+        hasAta: existingMeeting?.hasAta ?? Boolean(minutes),
+        isConfirmed: existingMeeting?.isConfirmed ?? minutes?.status === "confirmed",
+        result: {
+          ...resultFromApi,
+          meeting_id: meeting.id,
+        },
+        editedAtaText: minutes ? formatMinutesToAta(resultFromApi.minutes) : existingMeeting?.editedAtaText,
+        notes: existingMeeting?.notes,
+      };
+
+      setPastMeetings((previousMeetings) => {
+        const existingIndex = previousMeetings.findIndex((stored) => stored.result.meeting_id === meeting.id);
+        if (existingIndex === -1) {
+          return [nextStoredMeeting, ...previousMeetings];
+        }
+
+        return previousMeetings.map((stored, index) => {
+          if (index !== existingIndex) {
+            return stored;
+          }
+
+          return {
+            ...stored,
+            ...nextStoredMeeting,
+            id: stored.id,
+          };
+        });
+      });
+
+      viewMeeting(nextStoredMeeting);
+    } catch (err) {
+      setError(getApiErrorMessage(err, "Erro ao abrir reunião."));
+    }
+  }, [meetingsService, minutesService, transcriptionService, viewMeeting]);
+
   const goHome = useCallback(() => {
     setSidebarView("home");
     resetRecording();
@@ -978,8 +1105,9 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
           {(sidebarView === "meetings" || sidebarView === "atas" || sidebarView === "recentes") && (
             <MeetingsView
               sidebarView={sidebarView}
-              pastMeetings={pastMeetings}
+              storedMeetings={pastMeetings}
               onViewMeeting={viewMeeting}
+              onOpenMeetingById={openMeetingById}
               onGoHome={goHome}
             />
           )}
