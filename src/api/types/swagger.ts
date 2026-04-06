@@ -96,7 +96,7 @@ export interface MinutesParticipant {
 export interface MinutesAction {
   description: string;
   due_date?: string;
-  responsible_id?: string;
+  responsible_id: string;
 }
 
 export interface MinutesContent {

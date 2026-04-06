@@ -4,6 +4,7 @@ import { Icon } from "../components/Icon";
 import { RecordingPanel } from "../components/RecordingPanel";
 import { TabsPanel } from "../components/TabsPanel";
 import { ParticipantsPanel } from "../components/ParticipantsPanel";
+import { isMissingActionResponsible } from "../utils/actionResponsible";
 import type { AppState, ProcessResult, Participant, StoredMeeting, CalendarMeeting, SessionUser } from "../types";
 
 interface HomeViewProps {
@@ -105,6 +106,10 @@ export function HomeView({
   const emailFirstName = emailLocalPart.split(".")[0] ?? "";
   const normalizedFirstName = emailFirstName || user?.display_name?.split(" ")[0] || "Usuário";
   const firstName = normalizedFirstName.charAt(0).toUpperCase() + normalizedFirstName.slice(1).toLowerCase();
+  const hasActionWithoutResponsible = Boolean(
+    result?.minutes.action_items.some((item) => isMissingActionResponsible(item.responsible)),
+  );
+  const isConfirmAtaDisabled = isConfirmingAta || hasActionWithoutResponsible;
 
   // ── Recording / Processing / Finished ─────────────────────────────────────
 
@@ -146,17 +151,22 @@ export function HomeView({
 
           {appState === "finished" && result && !isAtaConfirmed && (
             <div style={{ marginTop: 24, textAlign: "right" }}>
+              {hasActionWithoutResponsible && (
+                <div style={{ marginBottom: 10, fontSize: 12.5, color: C.redStop }}>
+                  Defina um responsável para cada ação antes de confirmar a ata.
+                </div>
+              )}
               <button
                 className="btn-primary"
                 onClick={onConfirmAta}
-                disabled={isConfirmingAta}
+                disabled={isConfirmAtaDisabled}
                 style={{
-                  background: isConfirmingAta ? C.creamDark : C.orange,
-                  color: isConfirmingAta ? C.grayLight : C.white,
-                  boxShadow: isConfirmingAta ? "none" : `0 4px 16px rgba(255,145,20,0.3)`,
+                  background: isConfirmAtaDisabled ? C.creamDark : C.orange,
+                  color: isConfirmAtaDisabled ? C.grayLight : C.white,
+                  boxShadow: isConfirmAtaDisabled ? "none" : `0 4px 16px rgba(255,145,20,0.3)`,
                   fontSize: 14.5, padding: "14px 28px", borderRadius: 12,
                   transition: "all 0.3s ease",
-                  cursor: isConfirmingAta ? "not-allowed" : "pointer",
+                  cursor: isConfirmAtaDisabled ? "not-allowed" : "pointer",
                 }}
               >
                 {isConfirmingAta ? "Confirmando..." : "Confirmar Ata"}
@@ -507,3 +517,4 @@ export function HomeView({
     </div>
   );
 }
+
