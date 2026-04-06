@@ -4,6 +4,7 @@ import { useAppServices } from "./services";
 import { isApiError } from "./services/errors";
 import { getApiErrorMessage } from "./services/apiErrorMessage";
 import { formatMinutesToAta, formatTranscription } from "./utils/formatters";
+import { isMissingActionResponsible } from "./utils/actionResponsible";
 import { mapMinutesResponseToMinutes, toProcessResultViewModel } from "./api/mappers/meetingMapper";
 import { Sidebar } from "./components/Sidebar";
 import { Header } from "./components/Header";
@@ -724,6 +725,14 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
       responsible: item.responsible.trim(),
       deadline: item.deadline?.trim() || undefined,
     }));
+    const hasActionWithoutResponsible = normalizedItems.some((item) => isMissingActionResponsible(item.responsible));
+
+    // Defensive guard: UI should block this, but keep backend payload safe for any future callers.
+    if (hasActionWithoutResponsible) {
+      const message = "Atribua um responsável para cada ação antes de salvar.";
+      setError(message);
+      throw new Error(message);
+    }
 
     if (!currentMeetingId) {
       applyMinutesUpdate({ ...result.minutes, action_items: normalizedItems });
@@ -734,9 +743,8 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
 
     try {
       const actionLines = normalizedItems.map((item, index) => {
-        const responsibleLabel = item.responsible || "Sem responsável";
         const deadlineLabel = item.deadline || "Sem prazo";
-        return `${index + 1}. Responsável: ${responsibleLabel}; Ação: ${item.description}; Prazo: ${deadlineLabel}.`;
+        return `${index + 1}. Responsável: ${item.responsible}; Ação: ${item.description}; Prazo: ${deadlineLabel}.`;
       });
 
       const instruction = actionLines.length > 0
