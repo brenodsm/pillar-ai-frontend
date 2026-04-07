@@ -38,18 +38,29 @@ Mudar a condição de renderização do `RecordingPanel` em `HomeView.tsx` de `!
 
 ## Diferença: `hasAta` vs `isAtaConfirmed`
 
-- **`hasAta`**: boolean que indica se a reunião foi gravada e a ata foi gerada (transcrita + minuta processada). Setado para `true` no final do pipeline de processamento em `stopRecording` (linha 567 em `PillarAI.tsx`).
-- **`isAtaConfirmed`**: boolean que indica se a ata foi confirmada pelo usuário, bloqueando edições. Setado para `true` apenas quando `onConfirmAta` é executado.
+### `hasAta` (StoredMeeting.hasAta)
+- Boolean que indica se a reunião foi gravada e a ata foi **gerada** (transcrita + minuta processada)
+- Setado para `true` no final do pipeline de processamento em `stopRecording` (PillarAI.tsx, linha 567)
+- Persistido em `StoredMeeting`
+- Uma vez `true`, nunca volta para `false`
 
-Estado possível: `hasAta = true, isAtaConfirmed = false` (ata gerada mas ainda editável).
+### `isAtaConfirmed` (estado do componente)
+- Boolean que indica se a ata foi **confirmada** pelo usuário, bloqueando edições
+- Estado interno do componente `PillarAI.tsx` (useState)
+- Derivado de `StoredMeeting.isConfirmed` quando uma reunião é carregada (linha 926: `setIsAtaConfirmed(Boolean(meeting.isConfirmed))`)
+- Setado para `true` apenas quando `onConfirmAta` é executado
+- Após confirmação, edições são bloqueadas (UI fica read-only)
+
+### Estado Possível
+`hasAta = true, isAtaConfirmed = false` → ata foi gerada e está disponível para edição, mas ainda não foi confirmada.
 
 ## Fluxo de uma gravação
 
 1. Usuário inicia nova gravação → `hasAta = false` → `RecordingPanel` renderiza ✓
 2. Para a gravação → transcrição + minuta processadas → `hasAta = true` → `RecordingPanel` some ✓
 3. Usuário pode editar a ata → `isAtaConfirmed = false` → botões de edição visíveis ✓
-4. Usuário clica "Confirmar Ata" → `isAtaConfirmed = true` → edições bloqueadas, `RecordingPanel` continua oculto ✓
-5. Usuário fecha e reabre reunião → `hasAta = true` desde o início → sem flashing, `RecordingPanel` oculto ✓
+4. Usuário clica "Confirmar Ata" → `isAtaConfirmed = true` (e `StoredMeeting.isConfirmed = true`) → edições bloqueadas, `RecordingPanel` continua oculto ✓
+5. Usuário fecha e reabre reunião → `hasAta = true` desde o início, nenhum flashing → `RecordingPanel` oculto ✓
 6. Usuário inicia nova gravação diferente → `hasAta = false` para a nova reunião → `RecordingPanel` aparece ✓
 
 ## Invariantes preservados
@@ -59,6 +70,7 @@ Estado possível: `hasAta = true, isAtaConfirmed = false` (ata gerada mas ainda 
 - Botão "Confirmar Ata" continua usando `!isAtaConfirmed`
 - Nenhum novo campo é adicionado
 - Nenhum outro arquivo é alterado
+- Botão de edição de ações continua bloqueado quando `isAtaConfirmed = true`
 
 ## Fora do escopo
 
