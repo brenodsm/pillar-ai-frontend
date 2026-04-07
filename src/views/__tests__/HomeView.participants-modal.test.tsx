@@ -74,6 +74,7 @@ function buildProps(overrides: Partial<HomeViewProps> = {}): HomeViewProps {
     pastMeetings: [],
     user: null,
     showSystemAudioHint: false,
+    hasAta: true,
     isAtaConfirmed: true,
     isConfirmingAta: false,
     onConfirmAta: async () => {},
