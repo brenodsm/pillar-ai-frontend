@@ -27,28 +27,32 @@ export function MissingResponsibleTag({
   text = "Atribua um responsável",
   size = "medium",
 }: MissingResponsibleTagProps) {
+  const paddingClass = size === "small" ? "px-2 py-1" : "px-3 py-1.5";
+  const textSizeClass = size === "small" ? "text-xs" : "text-sm";
+
   return (
-    <span style={{
-      background: "#FF6B35", // laranja-avermelhado
-      color: "#ffffff",
-      padding: size === "small" ? "4px 8px" : "6px 12px",
-      borderRadius: 6,
-      fontSize: size === "small" ? 12 : 13,
-      fontWeight: 600,
-      whiteSpace: "nowrap",
-      display: "inline-block",
-    }}>
+    <span
+      className={`inline-block ${paddingClass} ${textSizeClass} rounded font-semibold text-white whitespace-nowrap`}
+      style={{ backgroundColor: "#FF9114" }}
+      role="status"
+      aria-live="polite"
+    >
       {text}
     </span>
   );
 }
 ```
 
+**Notas sobre implementação:**
+- Usa Tailwind para padding, text-size, border-radius
+- Cor `#FF9114` é a cor `C.orange` do design system (laranja-avermelhado conforme requisição)
+- Inclui `role="status"` e `aria-live="polite"` para acessibilidade
+
 ### Mudança 2: Usar `MissingResponsibleTag` em 3 Locais
 
-**Local 1 — TabsPanel.tsx (aba de ações, exibição de ação):**
+**Local 1 — TabsPanel.tsx (aba de ações, exibição de ação em renderização):**
 
-Onde renderiza `{responsible || "Sem responsável"}` (linha ~675):
+Localizar linha ~225 onde renderiza `{responsible || "Sem responsável"}`:
 ```tsx
 // Antes
 <div style={{ fontSize: 14, color: C.dark, fontWeight: 600 }}>
@@ -61,9 +65,9 @@ Onde renderiza `{responsible || "Sem responsável"}` (linha ~675):
 </div>
 ```
 
-**Local 2 — TabsPanel.tsx (aba da ata, seção de ações):**
+**Local 2 — TabsPanel.tsx (aba da ata, seção de ações em renderização):**
 
-Onde renderiza `{action.responsible || "Sem responsável"}` (linha ~969):
+Localizar linha ~1016 onde renderiza `{action.responsible || "Sem responsável"}`:
 ```tsx
 // Antes
 <strong>Responsável:</strong> {action.responsible || "Sem responsável"}
@@ -74,7 +78,7 @@ Onde renderiza `{action.responsible || "Sem responsável"}` (linha ~969):
 
 **Local 3 — HomeView.tsx (aviso de confirmação):**
 
-Substituir o texto de aviso por uma tag (linhas 155-159):
+Localizar linhas 155-159, substituir bloco inteiro:
 ```tsx
 // Antes
 {hasActionWithoutResponsible && (
@@ -95,15 +99,15 @@ Substituir o texto de aviso por uma tag (linhas 155-159):
 
 **Em TabsPanel.tsx, função `responsibleOptions` (linhas 309-337):**
 
-Remover as linhas que adicionam email como opção separada:
+Remover as linhas 317-319 que adicionam email como opção separada:
 ```tsx
 // REMOVER isto:
 if (participant.email?.trim()) {
   options.add(participant.email.trim());
 }
-
-// Resultado: o dropdown mostra APENAS "Nome (email)", não duplicação
 ```
+
+**Resultado esperado:** O dropdown mostra APENAS `"Nome (email)"`, sem duplicação.
 
 **Ao salvar a ação:**
 
@@ -113,7 +117,16 @@ Quando o usuário seleciona um responsável no dropdown, extrair apenas o email 
 // No onChange do select (linha ~976)
 onChange={(e) => {
   const selectedValue = e.target.value; // "Ana Silva (ana@empresa.com)"
-  const email = selectedValue.match(/\(([^)]+)\)/)?.[1] || selectedValue; // Extrai "ana@empresa.com"
+  
+  // Extrair email do formato "Nome (email)"
+  const emailMatch = selectedValue.match(/\(([^)]+)\)$/);
+  const email = emailMatch?.[1]?.trim() || selectedValue.trim();
+  
+  // Validar que é um email (contém @)
+  if (!email.includes('@')) {
+    console.error('Invalid email selected:', selectedValue);
+    return; // Ou mostrar erro ao usuário
+  }
   
   setEditableActions(
     editableActions.map((item, i) =>
@@ -125,28 +138,30 @@ onChange={(e) => {
 }}
 ```
 
-**Renderização frontend:**
-
-Quando exibir o responsável, usar `formatParticipantOption` ou lógica similar para recuperar "nome (email)" a partir do email armazenado. Esse matching já acontece naturalmente porque:
-- O backend armazena: `"ana@empresa.com"`
-- O frontend renderiza: encontra o participante com esse email → exibe `"Ana Silva (ana@empresa.com)"`
+**Data Flow:**
+1. Dropdown mostra: `["Ana Silva (ana@empresa.com)", "Bruno (bruno@empresa.com)"]`
+2. Usuário seleciona: `"Ana Silva (ana@empresa.com)"`
+3. Antes de salvar: extrair email → `"ana@empresa.com"`
+4. Backend recebe: `{ responsible: "ana@empresa.com" }`
+5. Frontend renderiza: `"Ana Silva (ana@empresa.com)"` (do `formatParticipantOption`)
 
 ## Arquivos Afetados
 
-- `src/components/MissingResponsibleTag.tsx` — novo arquivo
-- `src/components/TabsPanel.tsx` — importar tag, usar em 2 locais, remover duplicação no dropdown
+- `src/components/MissingResponsibleTag.tsx` — novo arquivo, exportar normalmente (import direto)
+- `src/components/TabsPanel.tsx` — importar tag, usar em 2 locais, remover duplicação no dropdown, atualizar onChange
 - `src/views/HomeView.tsx` — importar tag, usar em aviso de confirmação
-- `src/components/index.ts` ou equivalente — exportar novo componente se houver
 
 ## Invariantes Preservados
 
-- Responsável continua sendo armazenado e tratado como string
+- Responsável continua sendo armazenado e tratado como string (email)
 - Backend sempre recebe apenas email como valor de `responsible`
 - Frontend continua exibindo "Nome (email)" quando houver dado
 - Lógica de validação (`isMissingActionResponsible`) continua igual
+- Editable actions e action items continuam com mesma estrutura
 
 ## Fora do Escopo
 
-- Mudanças na cor laranja-avermelhada se for considerada inadequada
-- Refatoração da lógica de dropdown (apenas remover duplicação)
+- Mudanças na cor do design system
 - Suporte a múltiplos responsáveis por ação
+- Refatoração completa da lógica de dropdown (apenas remover duplicação)
+- Salvar o mapeamento nome→email no backend (backend responsável por esse mapeamento)
