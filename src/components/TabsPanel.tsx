@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { C } from "../constants/colors";
 import { Icon } from "./Icon";
+import { MissingResponsibleTag } from "./MissingResponsibleTag";
 import type { AppState, Participant, ProcessResult } from "../types";
 import { formatDateToBrDate } from "../utils/dateFormat";
 import { isMissingActionResponsible } from "../utils/actionResponsible";
@@ -222,7 +223,9 @@ function renderAtaText(ataText: string) {
           }}
         >
           <div style={{ fontSize: 12, color: C.grayLight, fontWeight: 600, marginBottom: 3 }}>Responsável</div>
-          <div style={{ fontSize: 14, color: C.dark, fontWeight: 600 }}>{responsible || "Sem responsável"}</div>
+          <div style={{ fontSize: 14, color: C.dark, fontWeight: 600 }}>
+            {responsible ? responsible : <MissingResponsibleTag size="small" />}
+          </div>
           {description ? (
             <>
               <div style={{ fontSize: 12, color: C.grayLight, fontWeight: 600, marginTop: 10, marginBottom: 3 }}>Ação</div>
@@ -313,9 +316,6 @@ export function TabsPanel({
       const participantOption = formatParticipantOption(participant);
       if (participantOption) {
         options.add(participantOption);
-      }
-      if (participant.email?.trim()) {
-        options.add(participant.email.trim());
       }
     });
 
@@ -950,9 +950,20 @@ export function TabsPanel({
                             <select
                               value={action.responsible || ""}
                               onChange={(event) => {
-                                const value = event.target.value;
+                                const selectedValue = event.target.value;
+
+                                // Extrair email do formato "Nome (email)"
+                                const emailMatch = selectedValue.match(/\(([^)]+)\)$/);
+                                const email = emailMatch?.[1]?.trim() || selectedValue.trim();
+
+                                // Validar que é um email (contém @)
+                                if (!email.includes('@')) {
+                                  console.error('Invalid email selected:', selectedValue);
+                                  return;
+                                }
+
                                 setEditableActions((prev) => prev.map((item, itemIndex) => (
-                                  itemIndex === index ? { ...item, responsible: value } : item
+                                  itemIndex === index ? { ...item, responsible: email } : item
                                 )));
                               }}
                               required
@@ -1013,7 +1024,7 @@ export function TabsPanel({
                         </div>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 12 }}>
                           <div style={{ fontSize: 13, color: C.gray }}>
-                            <strong>Responsável:</strong> {action.responsible || "Sem responsável"}
+                            <strong>Responsável:</strong> {action.responsible ? action.responsible : <MissingResponsibleTag size="small" />}
                           </div>
                           <div style={{ fontSize: 13, color: C.gray }}>
                             <strong>Prazo:</strong> {action.deadline ? formatDateToBrDate(action.deadline) : "Sem prazo"}
