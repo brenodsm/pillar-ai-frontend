@@ -40,6 +40,7 @@ interface HomeViewProps {
   pastMeetings: StoredMeeting[];
   user: SessionUser | null;
   showSystemAudioHint: boolean;
+  hasAta: boolean;
   isAtaConfirmed: boolean;
   isConfirmingAta: boolean;
   onConfirmAta: () => Promise<void>;
@@ -76,7 +77,7 @@ export function HomeView({
   onAiRewrite, isAiRewriting,
   onUpdateActionItems,
   calendarMeetings, pastMeetings, user, showSystemAudioHint,
-  isAtaConfirmed, isConfirmingAta, onConfirmAta
+  hasAta, isAtaConfirmed, isConfirmingAta, onConfirmAta
 }: HomeViewProps) {
   const [agendaModal, setAgendaModal] = useState<CalendarMeeting | null>(null);
   const [isParticipantsModalOpen, setIsParticipantsModalOpen] = useState(false);

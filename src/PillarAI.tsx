@@ -1072,6 +1072,7 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
               calendarMeetings={calendarMeetings}
               pastMeetings={pastMeetings}
               user={user ?? null}
+              hasAta={selectedMeeting?.hasAta ?? false}
               isAtaConfirmed={isAtaConfirmed}
               isConfirmingAta={isConfirmingAta}
               onConfirmAta={handleConfirmAta}
