@@ -23,6 +23,7 @@ export const Icon = ({ name, size = 20, color = "currentColor" }: { name: string
     chevronLeft: <><polyline points="15,18 9,12 15,6" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></>,
     sparkles: <><path d="M12 2l1.09 3.26L16.36 6.5l-3.27 1.09L12 10.86l-1.09-3.27L7.64 6.5l3.27-1.24L12 2z" fill={color} stroke={color} strokeWidth="1"/><path d="M5 15l.65 1.95L7.6 17.6l-1.95.65L5 20.2l-.65-1.95L2.4 17.6l1.95-.65L5 15z" fill={color} stroke={color} strokeWidth="0.5"/><path d="M19 11l.52 1.56 1.56.52-1.56.52L19 15.16l-.52-1.56-1.56-.52 1.56-.52L19 11z" fill={color} stroke={color} strokeWidth="0.5"/></>,
     paperclip: <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>,
+    alertCircle: <><circle cx="12" cy="12" r="10" fill="none" stroke={color} strokeWidth="2"/><line x1="12" y1="8" x2="12" y2="13" stroke={color} strokeWidth="2" strokeLinecap="round"/><circle cx="12" cy="16.5" r="1" fill={color} stroke="none"/></>,
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="0" strokeLinecap="round" strokeLinejoin="round">

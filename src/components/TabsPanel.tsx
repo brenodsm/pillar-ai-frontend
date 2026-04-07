@@ -910,17 +910,20 @@ export function TabsPanel({
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                {editableActions.map((action, index) => (
+                {editableActions.map((action, index) => {
+                  const isMissing = !isEditingActions && isMissingActionResponsible(action.responsible);
+                  return (
                   <div
                     key={`action-item-${index}`}
                     style={{
-                      background: C.white,
+                      background: isMissing ? "rgba(255, 145, 20, 0.04)" : C.white,
                       borderRadius: 12,
-                      border: `1px solid ${C.creamDark}`,
+                      border: `1px solid ${isMissing ? C.orange : C.creamDark}`,
                       padding: "14px 16px",
                       display: "flex",
                       flexDirection: "column",
                       gap: 10,
+                      transition: "border-color 0.2s ease, background 0.2s ease",
                     }}
                   >
                     <div style={{ fontSize: 12, fontWeight: 700, color: C.gray, textTransform: "uppercase", letterSpacing: "0.05em" }}>
@@ -1024,7 +1027,15 @@ export function TabsPanel({
                         </div>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 12 }}>
                           <div style={{ fontSize: 13, color: C.gray }}>
-                            <strong>Responsável:</strong> {action.responsible ? action.responsible : <MissingResponsibleTag size="small" />}
+                            <strong>Responsável:</strong>{" "}
+                            {!isMissingActionResponsible(action.responsible) ? (
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                                <Icon name="check" size={13} color={C.green} />
+                                <span style={{ color: C.green }}>{action.responsible}</span>
+                              </span>
+                            ) : (
+                              <MissingResponsibleTag size="small" />
+                            )}
                           </div>
                           <div style={{ fontSize: 13, color: C.gray }}>
                             <strong>Prazo:</strong> {action.deadline ? formatDateToBrDate(action.deadline) : "Sem prazo"}
@@ -1033,7 +1044,8 @@ export function TabsPanel({
                       </>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

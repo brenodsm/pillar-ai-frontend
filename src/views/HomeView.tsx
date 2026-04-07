@@ -4,7 +4,7 @@ import { Icon } from "../components/Icon";
 import { RecordingPanel } from "../components/RecordingPanel";
 import { TabsPanel } from "../components/TabsPanel";
 import { ParticipantsPanel } from "../components/ParticipantsPanel";
-import { MissingResponsibleTag } from "../components/MissingResponsibleTag";
+import { ActionRequiredAlert } from "../components/ActionRequiredAlert";
 import { isMissingActionResponsible } from "../utils/actionResponsible";
 import type { AppState, ProcessResult, Participant, StoredMeeting, CalendarMeeting, SessionUser } from "../types";
 
@@ -155,7 +155,7 @@ export function HomeView({
             <div style={{ marginTop: 24, textAlign: "right" }}>
               {hasActionWithoutResponsible && (
                 <div style={{ marginBottom: 10 }}>
-                  <MissingResponsibleTag text="Atribua um responsável para todas as ações" />
+                  <ActionRequiredAlert />
                 </div>
               )}
               <button
