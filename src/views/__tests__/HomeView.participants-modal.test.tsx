@@ -100,4 +100,41 @@ describe("HomeView participants modal", () => {
 
     expect(screen.queryByRole("dialog", { name: /gerenciar participantes/i })).not.toBeInTheDocument();
   });
+
+  it("disables minutes confirmation when any action has no responsible", () => {
+    render(
+      <HomeView
+        {...buildProps({
+          isAtaConfirmed: false,
+          result: {
+            transcription: {
+              text: "",
+              language: "pt-BR",
+              segments: [],
+            },
+            minutes: {
+              title: "Reunião de status",
+              date: "2026-04-04",
+              participants: ["Ana"],
+              summary: "Resumo",
+              topics: [],
+              action_items: [
+                {
+                  description: "Enviar cronograma atualizado",
+                  responsible: "",
+                },
+              ],
+              decisions: [],
+              next_steps: "",
+            },
+            meeting_id: "1",
+            minutes_id: "1",
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /confirmar ata/i })).toBeDisabled();
+    expect(screen.getByText(/defina um responsável para cada ação antes de confirmar a ata/i)).toBeInTheDocument();
+  });
 });

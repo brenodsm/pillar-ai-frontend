@@ -3,6 +3,7 @@ import { C } from "../constants/colors";
 import { Icon } from "./Icon";
 import type { AppState, Participant, ProcessResult } from "../types";
 import { formatDateToBrDate } from "../utils/dateFormat";
+import { isMissingActionResponsible } from "../utils/actionResponsible";
 
 interface TabsPanelProps {
   activeTab: string;
@@ -327,7 +328,7 @@ export function TabsPanel({
 
     editableActions.forEach((item) => {
       const normalized = item.responsible.trim();
-      if (normalized && normalizeHeading(normalized) !== "sem responsável") {
+      if (normalized && !isMissingActionResponsible(normalized)) {
         options.add(normalized);
       }
     });
@@ -336,15 +337,25 @@ export function TabsPanel({
   }, [editableActions, participants, result?.minutes.participants]);
 
   const hasEmptyActionDescription = editableActions.some((item) => !item.description.trim());
+  const hasActionWithoutResponsible = editableActions.some((item) => isMissingActionResponsible(item.responsible));
+  const isSaveActionsDisabled = isAiRewriting || hasEmptyActionDescription || hasActionWithoutResponsible || isSavingActions;
 
   const handleSaveActions = async () => {
+    if (hasEmptyActionDescription) {
+      setActionsEditError("Preencha a descrição de todas as ações antes de salvar.");
+      return;
+    }
+
+    if (hasActionWithoutResponsible) {
+      setActionsEditError("Atribua um responsável para cada ação antes de salvar.");
+      return;
+    }
+
     const normalized = editableActions.map((item) => {
-      const responsible = item.responsible.trim();
-      const normalizedResponsible = normalizeHeading(responsible) === "sem responsável" ? "" : responsible;
       const deadline = item.deadline?.trim();
       return {
         description: item.description.trim(),
-        responsible: normalizedResponsible,
+        responsible: item.responsible.trim(),
         deadline: deadline || undefined,
       };
     });
@@ -845,19 +856,19 @@ export function TabsPanel({
                       </button>
                       <button
                         onClick={() => { void handleSaveActions(); }}
-                        disabled={isAiRewriting || hasEmptyActionDescription || isSavingActions}
+                        disabled={isSaveActionsDisabled}
                         style={{
                           padding: "7px 16px",
                           borderRadius: 8,
                           border: "none",
-                          background: (isAiRewriting || hasEmptyActionDescription || isSavingActions)
+                          background: isSaveActionsDisabled
                             ? C.creamDark
                             : `linear-gradient(135deg, ${C.orange}, ${C.orangeDark})`,
-                          cursor: (isAiRewriting || hasEmptyActionDescription || isSavingActions) ? "not-allowed" : "pointer",
+                          cursor: isSaveActionsDisabled ? "not-allowed" : "pointer",
                           fontSize: 12,
                           fontWeight: 600,
                           fontFamily: "inherit",
-                          color: (isAiRewriting || hasEmptyActionDescription || isSavingActions) ? C.grayLight : C.white,
+                          color: isSaveActionsDisabled ? C.grayLight : C.white,
                           transition: "all 0.2s",
                         }}
                       >
@@ -944,6 +955,7 @@ export function TabsPanel({
                                   itemIndex === index ? { ...item, responsible: value } : item
                                 )));
                               }}
+                              required
                               style={{
                                 width: "100%",
                                 borderRadius: 8,
@@ -956,7 +968,7 @@ export function TabsPanel({
                                 outline: "none",
                               }}
                             >
-                              <option value="">Sem responsável</option>
+                              <option value="" disabled>{responsibleOptions.length > 0 ? "Selecione um responsável" : "Adicione participantes"}</option>
                               {responsibleOptions.map((option) => (
                                 <option key={option} value={option}>
                                   {option}
@@ -1019,3 +1031,4 @@ export function TabsPanel({
     </div>
   );
 }
+
