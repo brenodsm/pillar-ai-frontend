@@ -972,6 +972,18 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
         });
       });
 
+      const participantsFromApi = (meeting.participants ?? [])
+        .filter((p) => p.email?.trim())
+        .map((p) => ({
+          name: p.name?.trim() || p.email.trim(),
+          email: p.email.trim(),
+          isOwner: p.source === "organizer",
+        }));
+
+      if (participantsFromApi.length > 0) {
+        setParticipants(participantsFromApi);
+      }
+
       viewMeeting(nextStoredMeeting);
     } catch (err) {
       setError(getApiErrorMessage(err, "Erro ao abrir reunião."));
