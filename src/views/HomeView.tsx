@@ -121,7 +121,7 @@ export function HomeView({
           </div>
         )}
         <div style={{ animation: "fadeIn 0.4s ease" }}>
-          {!isAtaConfirmed && <RecordingPanel appState={appState} startTime={startTime} showSystemAudioHint={showSystemAudioHint} onStop={onStop} onReset={onReset} />}
+          {!hasAta && <RecordingPanel appState={appState} startTime={startTime} showSystemAudioHint={showSystemAudioHint} onStop={onStop} onReset={onReset} />}
           {showPanel && appState !== "processing" && (
             <TabsPanel
               activeTab={activeTab}
