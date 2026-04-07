@@ -14,74 +14,107 @@ Isso ocorre em dois contextos:
 
 1. **Enquanto navegando**: Ao trocar de "Reuniões" para outra view (ex: "Acções"), os estados `selectedMeeting` e `currentMeetingId` não são zerados, então os useEffects continuam disparando requisições.
 
-2. **Enquanto visualizando reunião**: O useEffect na linha 834 (`refreshMeetingMinutesState`) roda continuamente enquanto a reunião está aberta, mesmo sem mudanças.
+2. **Enquanto visualizando reunião**: O useEffect na linha 834 (`refreshMeetingMinutesState`) roda continuamente enquanto a reunião está aberta, mesmo sem mudanças. O useEffect na linha 810 (nota privada) também roda continuamente.
 
 ## Causa Raiz
 
 - **Contexto 1**: Sidebar só chama `onReset()` para a view "home". Outras navegações deixam o estado sujo.
-- **Contexto 2**: `refreshMeetingMinutesState` no useEffect é um polling sem parada. Depois que a ata é carregada inicialmente, não há razão para continuar fazendo GET repetidamente.
+- **Contexto 2**: `refreshMeetingMinutesState` no useEffect (linha 834) é polling sem parada. `getMeetingNote` no useEffect (linha 810) também é polling contínuo. Após a carga inicial via `openMeetingById()`, não há razão para continuar fazendo GET repetidamente — só quando há edições (POST/PUT).
 
 ## Solução
 
-### Parte A1: Limpar estado ao navegar (Opção A1)
+### Parte A1: Limpar estado ao navegar (PREREQUISITO para B1)
 
-Criar função `clearMeetingContext()` que reseta:
+Criar função `clearMeetingContext()` que reseta **todos** os estados relacionados à reunião aberta:
 - `selectedMeeting` → null
 - `currentMeetingId` → null
 - `currentMinutesId` → null
 - `currentMeetingSnapshot` → null
+- `result` → null
+- `ataText` → ""
+- `isAtaConfirmed` → false
+- `activeTab` → "notas" (default)
 - `appState` → "idle"
 - `showPanel` → false
 
-Chamar essa função no Sidebar quando o usuário clica em qualquer view que não seja "home" (meetings, acoes, calendario, recentes).
-
 **Implementação:**
-1. Em `PillarAI.tsx`: Criar função `clearMeetingContext()` com a lógica acima
+1. Em `PillarAI.tsx`: Criar função `clearMeetingContext()` com toda a lógica acima
 2. Passar para Sidebar como novo prop `onClearMeetingContext`
-3. No Sidebar, ao clicar em item (exceto "home"): chamar `onClearMeetingContext()` antes de `setSidebarView()`
+3. No Sidebar.tsx (linha 77), ao clicar em item: 
+   - Se item.id !== "home" → chamar `onClearMeetingContext()` **antes** de `setSidebarView()`
+   - Se item.id === "home" → continuar chamando `onReset()` como antes
+   - Nota: "settings" (linha 105) também é uma navegação, então precisa limpar contexto
 
-### Parte B1: Remover polling contínuo (Opção B1)
+**Por que é pré-requisito:** Sem limpar `currentMeetingId` e `selectedMeeting`, os useEffects (linhas 810 e 834) vão continuar disparando mesmo em outras views.
 
-Remover o `useEffect` na linha 834 que dispara `refreshMeetingMinutesState()` automaticamente.
+### Parte B1: Remover polling contínuo (SÓ APÓS A1)
 
-Ao invés disso, chamar `refreshMeetingMinutesState()` **apenas** quando necessário:
+Remover **ambos** os useEffects de polling:
+
+1. **useEffect linha 810** (nota privada):
+```tsx
+// REMOVER
+useEffect(() => {
+  if (!currentMeetingId || !selectedMeeting || appState !== "finished") return;
+  let mounted = true;
+  (async () => {
+    try {
+      const note = await notesService.getMeetingNote(currentMeetingId);
+      if (mounted) setNotes(note.content || "");
+    } catch (err) { ... }
+  })();
+  return () => { mounted = false; };
+}, [appState, currentMeetingId, notesService, selectedMeeting]);
+```
+
+2. **useEffect linha 834** (minuta):
+```tsx
+// REMOVER
+useEffect(() => {
+  if (!currentMeetingId || !selectedMeeting || appState !== "finished") return;
+  let mounted = true;
+  (async () => {
+    try {
+      await refreshMeetingMinutesState(currentMeetingId);
+    } catch (err) { ... }
+  })();
+  return () => { mounted = false; };
+}, [appState, currentMeetingId, refreshMeetingMinutesState, selectedMeeting]);
+```
+
+**Ao invés disso**, chamar `refreshMeetingMinutesState()` **apenas** quando necessário (já existem essas chamadas):
 - Após `handleAiRewrite()` (linha 875) — já existe
-- Após `handleUpdateActionItems()` (linha 681) — já existe
+- Após `handleUpdateActionItems()` (linha 681) — já existe  
 - Após `handleConfirmAta()` (linha 596) — já existe
 
-**Lógica**: Uma vez que a ata é carregada em `openMeetingById()`, o frontend tem tudo em memória. Só precisa refetch se o usuário editou algo via POST (AI rewrite, action items, confirmar ata).
+A nota privada (`notes`) é carregada inicialmente em `openMeetingById()` e armazenada em `pastMeetings[].notes`. Se precisar sincronizar, é via POST (ex: usuário edita nota), não via GET polling.
 
 ## Arquivos afetados
 
-- `src/PillarAI.tsx` — adicionar `clearMeetingContext()`, remover useEffect linha 834, passar prop ao Sidebar
-- `src/components/Sidebar.tsx` — receber prop `onClearMeetingContext`, chamar em onClick
+- `src/PillarAI.tsx` — adicionar `clearMeetingContext()`, remover 2 useEffects (linhas 810-832 e 834-855), passar prop ao Sidebar
+- `src/components/Sidebar.tsx` — receber prop `onClearMeetingContext`, chamar em onClick (linha 77 e 105)
 
-## Mudanças
+## Mudanças Detalhadas
 
 ### PillarAI.tsx
 
 ```tsx
-// Adicionar função
+// Adicionar função (junto com resetRecording)
 const clearMeetingContext = useCallback(() => {
   setSelectedMeeting(null);
   setCurrentMeetingId(null);
   setCurrentMinutesId(null);
   setCurrentMeetingSnapshot(null);
+  setResult(null);
+  setAtaText("");
+  setIsAtaConfirmed(false);
+  setActiveTab("notas");
   setAppState("idle");
   setShowPanel(false);
 }, []);
 
-// Remover useEffect linha 834:
-// useEffect(() => {
-//   if (!currentMeetingId || !selectedMeeting || appState !== "finished") return;
-//   let mounted = true;
-//   (async () => {
-//     try {
-//       await refreshMeetingMinutesState(currentMeetingId);
-//     } catch (err) { ... }
-//   })();
-//   return () => { mounted = false; };
-// }, [appState, currentMeetingId, refreshMeetingMinutesState, selectedMeeting]);
+// REMOVER useEffect (linhas 810-832): getMeetingNote polling
+// REMOVER useEffect (linhas 834-855): refreshMeetingMinutesState polling
 
 // Passar para Sidebar
 <Sidebar
@@ -98,7 +131,7 @@ interface SidebarProps {
   onClearMeetingContext?: () => void;
 }
 
-// Ao clicar em item (linha 77)
+// Ao clicar em item do sidebar (linha 77)
 onClick={() => {
   if (item.id !== "home") {
     onClearMeetingContext?.();
@@ -106,22 +139,37 @@ onClick={() => {
   setSidebarView(item.id);
   if (item.id === "home") onReset();
 }}
+
+// Ao clicar em settings (linha 105)
+onClick={() => {
+  onClearMeetingContext?.();
+  setSidebarView("settings");
+}}
 ```
+
+## Fluxo Completo
+
+1. Usuário abre reunião A → `openMeetingById()` faz 3 GET iniciais, carrega dados em memória
+2. Usuário visualiza/edita reunião A → sem polling automático (estados em memória)
+3. Se editar ata (AI rewrite, ações, confirmar) → `refreshMeetingMinutesState()` é chamado explicitamente
+4. Usuário navega para "Reuniões" → `clearMeetingContext()` reseta tudo
+5. Usuário navega para reunião B → volta a fazer 3 GET iniciais (novo contexto)
 
 ## Invariantes preservados
 
-- `openMeetingById()` continua fazendo as 3 requisições iniciais para carregar reunião
-- `refreshMeetingMinutesState()` continua sendo chamado após edições (AI rewrite, ações, confirmar)
-- Usuário pode navegar e voltar para mesma reunião — estado é refrescado novamente
-- useEffect na linha 810 (nota privada) também pode ser removido (ver Fora do Escopo)
+- `openMeetingById()` continua fazendo as 3 requisições iniciais — apenas removemos o polling repetido
+- `refreshMeetingMinutesState()` continua sendo chamado após edições
+- `pastMeetings` array é preservado (não é zerado)
+- Usuário pode navegar e voltar para mesma reunião — contexto é refrescado como nova abertura
+- Sem Part A1, Part B1 causa stale state (não faça Part B1 sem A1)
 
 ## Impacto na Performance
 
-- **Antes**: 3 requisições por segundo enquanto reunião aberta = ~180 req/min
-- **Depois**: 1 requisição inicial + 1 req por edição = ~2-3 req total por visita
+- **Antes**: ~3 requisições por segundo enquanto reunião aberta = ~180 req/min (ou mais)
+- **Depois**: 3 requisições iniciais por visita + 1-2 req por edição = ~5-10 req total por sessão de uma reunião
 
 ## Fora do escopo
 
-- Remover useEffect da nota privada (linha 810) — pode ser feito em PR separado
-- Implementar WebSocket/real-time sync — não necessário por enquanto
-- Cache de requisições com stale-while-revalidate — pode melhorar mas não resolve o polling
+- WebSocket/real-time sync
+- Cache com stale-while-revalidate
+- AbortController para cancelar requisições pendentes ao navegar
