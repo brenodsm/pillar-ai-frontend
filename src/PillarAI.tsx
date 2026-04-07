@@ -1079,7 +1079,7 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
             />
           )}
 
-          {(sidebarView === "meetings" || sidebarView === "atas" || sidebarView === "recentes") && (
+          {(sidebarView === "meetings" || sidebarView === "atas") && (
             <MeetingsView
               sidebarView={sidebarView}
               onOpenMeetingById={openMeetingById}

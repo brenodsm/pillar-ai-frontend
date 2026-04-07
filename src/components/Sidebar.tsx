@@ -20,7 +20,6 @@ const sidebarItems: Array<{ id: SidebarView; label: string; icon: string }> = [
   { id: "calendario", label: "Calendário", icon: "calendar" },
   { id: "meetings", label: "Reuniões", icon: "meetings" },
   { id: "acoes", label: "Ações", icon: "check" },
-  { id: "recentes", label: "Recentes", icon: "clock" },
 ];
 
 export function Sidebar({ sidebarView, setSidebarView, pastMeetings, onViewMeeting, onReset, onClearMeetingContext, onLogout, user }: SidebarProps) {

@@ -13,7 +13,6 @@ interface MeetingsViewProps {
 const viewTitles: Record<string, string> = {
   meetings: "Todas as Reuniões",
   atas: "Atas Geradas",
-  recentes: "Reuniões Recentes",
 };
 
 export function MeetingsView({

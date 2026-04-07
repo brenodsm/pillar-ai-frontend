@@ -1,6 +1,6 @@
 import type { AppState, Participant, ProcessResult } from "./types";
 
-export type SidebarView = "home" | "calendario" | "meetings" | "atas" | "recentes" | "acoes" | "settings";
+export type SidebarView = "home" | "calendario" | "meetings" | "atas" | "acoes" | "settings";
 
 export interface PersistedPillarUiState {
   sidebarView: SidebarView;
@@ -27,7 +27,6 @@ const VALID_SIDEBAR_VIEWS = new Set<SidebarView>([
   "calendario",
   "meetings",
   "atas",
-  "recentes",
   "acoes",
   "settings",
 ]);
