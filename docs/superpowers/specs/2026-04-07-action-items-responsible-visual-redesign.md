@@ -62,12 +62,16 @@ export function MissingResponsibleTag({ size = "medium" }: MissingResponsibleTag
 - Prop `text` removida — texto agora é fixo "Atribuir responsável" (matching design)
 - Fundo transparente, borda laranja, texto laranja
 - Ícone `alertCircle` à esquerda
+- Nenhum call site existente passa `text` e mantém `MissingResponsibleTag` após a Mudança 6, então a remoção é segura
 
 ### Mudança 3: Novo componente `ActionRequiredAlert`
 
-Criar `src/components/ActionRequiredAlert.tsx`:
+Criar `src/components/ActionRequiredAlert.tsx`. O ícone é envolto em `<span>` para aplicar os estilos de layout (o componente `Icon` não aceita prop `style`):
 
 ```tsx
+import { C } from "../constants/colors";
+import { Icon } from "./Icon";
+
 export function ActionRequiredAlert() {
   return (
     <div
@@ -81,7 +85,9 @@ export function ActionRequiredAlert() {
         gap: 10,
       }}
     >
-      <Icon name="alertCircle" size={18} color={C.redStop} style={{ flexShrink: 0, marginTop: 1 }} />
+      <span style={{ flexShrink: 0, marginTop: 1, display: "flex" }}>
+        <Icon name="alertCircle" size={18} color={C.redStop} />
+      </span>
       <div>
         <div style={{ fontWeight: 700, color: C.dark, fontSize: 13 }}>
           Ação necessária
@@ -97,10 +103,10 @@ export function ActionRequiredAlert() {
 
 ### Mudança 4: Card de ação em `TabsPanel.tsx` — estado visual condicional
 
-No mapa `editableActions` (linha ~914), aplicar estilo condicional no card:
+No mapa `editableActions` (linha ~914), aplicar estilo condicional no card. O destaque visual (borda laranja + fundo levemente alaranjado) se aplica **apenas no modo de visualização** — `isMissing` é calculado levando `isEditingActions` em conta:
 
 ```tsx
-const isMissing = isMissingActionResponsible(action.responsible);
+const isMissing = !isEditingActions && isMissingActionResponsible(action.responsible);
 
 <div
   key={`action-item-${index}`}
@@ -117,7 +123,7 @@ const isMissing = isMissingActionResponsible(action.responsible);
 >
 ```
 
-Aplica-se **apenas no modo de visualização** (não-editing). No modo de edição, o card usa estilo padrão.
+No modo de edição (`isEditingActions === true`), `isMissing` é sempre `false` — o card mantém borda e fundo padrão independente do estado do responsável.
 
 ### Mudança 5: Checkmark verde para responsável atribuído em `TabsPanel.tsx`
 
@@ -129,7 +135,7 @@ No modo de visualização (linha ~1027), mostrar ✓ verde quando responsável e
 
 // Depois
 <strong>Responsável:</strong>{" "}
-{action.responsible && !isMissingActionResponsible(action.responsible) ? (
+{!isMissingActionResponsible(action.responsible) ? (
   <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
     <Icon name="check" size={13} color={C.green} />
     <span style={{ color: C.green }}>{action.responsible}</span>
@@ -140,6 +146,18 @@ No modo de visualização (linha ~1027), mostrar ✓ verde quando responsável e
 ```
 
 ### Mudança 6: `HomeView.tsx` — substituir badge por `ActionRequiredAlert`
+
+Remover import de `MissingResponsibleTag` e adicionar import de `ActionRequiredAlert`:
+
+```tsx
+// Remover:
+import { MissingResponsibleTag } from "../components/MissingResponsibleTag";
+
+// Adicionar:
+import { ActionRequiredAlert } from "../components/ActionRequiredAlert";
+```
+
+Substituir o uso:
 
 ```tsx
 // Antes
@@ -162,8 +180,8 @@ No modo de visualização (linha ~1027), mostrar ✓ verde quando responsável e
 - `src/components/Icon.tsx` — adicionar ícone `alertCircle`
 - `src/components/MissingResponsibleTag.tsx` — redesign para outlined badge, remover prop `text`
 - `src/components/ActionRequiredAlert.tsx` — novo arquivo
-- `src/components/TabsPanel.tsx` — estilo condicional no card + checkmark verde na visualização
-- `src/views/HomeView.tsx` — trocar `MissingResponsibleTag` por `ActionRequiredAlert`
+- `src/components/TabsPanel.tsx` — estilo condicional no card (view mode only) + checkmark verde na visualização
+- `src/views/HomeView.tsx` — trocar import e uso de `MissingResponsibleTag` por `ActionRequiredAlert`
 
 ## Invariantes Preservados
 
@@ -171,10 +189,11 @@ No modo de visualização (linha ~1027), mostrar ✓ verde quando responsável e
 - `hasActionWithoutResponsible` não muda
 - Responsável continua sendo armazenado e enviado como email
 - Botão "Confirmar Ata" continua desabilitado quando há ações sem responsável
-- Modo de edição do card não é afetado visualmente
+- Modo de edição do card não é afetado visualmente (`isMissing` é `false` quando `isEditingActions`)
 
 ## Fora do Escopo
 
 - Redesign do modo de edição do card
 - Mudanças no fluxo de atribuição de responsável
-- Checkmark verde na aba da ata (seção de ações da ata gerada)
+- Checkmark verde na aba da ata (seção de ações da ata gerada, `TabsPanel.tsx` linha ~227)
+- Destaque de borda/fundo nos cards da aba da ata (`TabsPanel.tsx` linha ~217–240) — esses cards são renderizados a partir do texto markdown e não têm acesso a `isMissingActionResponsible` no mesmo contexto; tratamento visual divergente é intencional
