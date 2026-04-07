@@ -636,6 +636,19 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
     systemAudioTrackRef.current = null;
   }, [owner]);
 
+  const clearMeetingContext = useCallback(() => {
+    setSelectedMeeting(null);
+    setCurrentMeetingId(null);
+    setCurrentMinutesId(null);
+    setCurrentMeetingSnapshot(null);
+    setResult(null);
+    setAtaText("");
+    setIsAtaConfirmed(false);
+    setActiveTab("notas");
+    setAppState("idle");
+    setShowPanel(false);
+  }, []);
+
   const addParticipant = useCallback(() => {
     const trimmed = emailInput.trim();
     if (!trimmed || !trimmed.includes("@")) return;
@@ -807,52 +820,6 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
     }));
   }, [selectedMeeting]);
 
-  useEffect(() => {
-    if (!currentMeetingId || !selectedMeeting || appState !== "finished") return;
-
-    let mounted = true;
-    (async () => {
-      try {
-        const note = await notesService.getMeetingNote(currentMeetingId);
-        if (mounted) setNotes(note.content || "");
-      } catch (err) {
-        if (mounted) {
-          if (isApiError(err) && err.status === 404) {
-            setNotes("");
-          } else {
-            setError(err instanceof Error ? err.message : "Erro ao carregar nota privada.");
-          }
-        }
-      }
-    })();
-
-    return () => {
-      mounted = false;
-    };
-  }, [appState, currentMeetingId, notesService, selectedMeeting]);
-
-  useEffect(() => {
-    if (!currentMeetingId || !selectedMeeting || appState !== "finished") return;
-
-    let mounted = true;
-    (async () => {
-      try {
-        await refreshMeetingMinutesState(currentMeetingId);
-      } catch (err) {
-        if (!mounted) {
-          return;
-        }
-        if (isApiError(err) && err.status === 404) {
-          return;
-        }
-        setError(getApiErrorMessage(err, "Erro ao sincronizar ata da reunião."));
-      }
-    })();
-
-    return () => {
-      mounted = false;
-    };
-  }, [appState, currentMeetingId, refreshMeetingMinutesState, selectedMeeting]);
 
   const transcriptionText = result ? formatTranscription(result) : "";
 
@@ -1054,6 +1021,7 @@ export default function PillarAI({ onLogout, user }: { onLogout?: () => void; us
         pastMeetings={pastMeetings}
         onViewMeeting={viewMeeting}
         onReset={resetRecording}
+        onClearMeetingContext={clearMeetingContext}
         onLogout={onLogout ?? (() => {})}
         user={user}
       />

@@ -10,6 +10,7 @@ interface SidebarProps {
   pastMeetings: StoredMeeting[];
   onViewMeeting: (meeting: StoredMeeting) => void;
   onReset: () => void;
+  onClearMeetingContext?: () => void;
   onLogout: () => void;
   user?: SessionUser | null;
 }
@@ -22,7 +23,7 @@ const sidebarItems: Array<{ id: SidebarView; label: string; icon: string }> = [
   { id: "recentes", label: "Recentes", icon: "clock" },
 ];
 
-export function Sidebar({ sidebarView, setSidebarView, pastMeetings, onViewMeeting, onReset, onLogout, user }: SidebarProps) {
+export function Sidebar({ sidebarView, setSidebarView, pastMeetings, onViewMeeting, onReset, onClearMeetingContext, onLogout, user }: SidebarProps) {
   const userEmail = user?.email?.trim() || "";
   const userDisplayName = user?.display_name?.trim() || "Usuário";
   const userInitials = userDisplayName
@@ -74,7 +75,13 @@ export function Sidebar({ sidebarView, setSidebarView, pastMeetings, onViewMeeti
           <div
             key={item.id}
             className={`sidebar-item ${sidebarView === item.id ? "active" : ""}`}
-            onClick={() => { setSidebarView(item.id); if (item.id === "home") onReset(); }}
+            onClick={() => {
+              if (item.id !== "home") {
+                onClearMeetingContext?.();
+              }
+              setSidebarView(item.id);
+              if (item.id === "home") onReset();
+            }}
           >
             <Icon name={item.icon} size={18} color={sidebarView === item.id ? C.orange : C.grayLight} />
             {item.label}
@@ -102,7 +109,7 @@ export function Sidebar({ sidebarView, setSidebarView, pastMeetings, onViewMeeti
 
       {/* Bottom */}
       <div style={{ padding: "16px", borderTop: `1px solid ${C.creamDark}` }}>
-        <div className="sidebar-item" onClick={() => setSidebarView("settings")} style={{ margin: 0 }}>
+        <div className="sidebar-item" onClick={() => { onClearMeetingContext?.(); setSidebarView("settings"); }} style={{ margin: 0 }}>
           <Icon name="settings" size={18} color={C.grayLight} />
           Configurações
         </div>
