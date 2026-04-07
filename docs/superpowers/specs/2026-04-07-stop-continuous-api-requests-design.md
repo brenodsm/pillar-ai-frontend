@@ -125,27 +125,41 @@ const clearMeetingContext = useCallback(() => {
 
 ### Sidebar.tsx
 
+**Interface update (linha 7):**
 ```tsx
 interface SidebarProps {
   ...
   onClearMeetingContext?: () => void;
 }
+```
 
-// Ao clicar em item do sidebar (linha 77)
+**Item navigation (linha 77):**
+Quando qualquer item **que não seja "home"** for clicado, chamar `clearMeetingContext()` ANTES de mudar a view:
+```tsx
 onClick={() => {
   if (item.id !== "home") {
-    onClearMeetingContext?.();
+    onClearMeetingContext?.();  // Limpa contexto ao navegar para outro lugar
   }
   setSidebarView(item.id);
-  if (item.id === "home") onReset();
+  if (item.id === "home") onReset();  // Se for home, também chama onReset
 }}
+```
 
-// Ao clicar em settings (linha 105)
+**Settings navigation (linha 105):**
+Settings é uma view especial (não faz parte do sidebarItems loop). Precisa fazer o mesmo:
+```tsx
 onClick={() => {
-  onClearMeetingContext?.();
+  onClearMeetingContext?.();  // Limpa contexto ao navegar para settings
   setSidebarView("settings");
 }}
 ```
+
+**Comportamento resultante:**
+- Home → outra view: limpa contexto (A1 ✓)
+- Outra view → outra view: limpa contexto antes de mudar (A1 ✓)
+- Reunião aberta → Settings: limpa contexto (A1 ✓)
+- Settings → Reunião aberta: contexto zerado, assim quando clicar em reunião via Sidebar, `openMeetingById()` refaz as 3 requisições iniciais
+
 
 ## Fluxo Completo
 
