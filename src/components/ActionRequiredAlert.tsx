@@ -11,18 +11,20 @@ export function ActionRequiredAlert() {
           borderRadius: 10,
           padding: "12px 16px",
           display: "inline-flex",
-          alignItems: "center",
+          alignItems: "flex-start",
           gap: 10,
         }}
       >
-        <div style={{ fontWeight: 700, color: C.redStop, fontSize: 13 }}>
-          Ação necessária
-        </div>
-        <span style={{ flexShrink: 0, display: "flex", alignItems: "center" }}>
-          <Icon name="alertCircle" size={16} color={C.redStop} />
+        <span style={{ flexShrink: 0, marginTop: 1, display: "flex" }}>
+          <Icon name="alertCircle" size={18} color={C.redStop} />
         </span>
-        <div style={{ color: C.redStop, fontSize: 13 }}>
-          Defina um responsável para as ações
+        <div>
+          <div style={{ fontWeight: 700, color: C.redStop, fontSize: 13 }}>
+            Ação necessária
+          </div>
+          <div style={{ color: C.redStop, fontSize: 12, marginTop: 2 }}>
+            Defina um responsável para as ações
+          </div>
         </div>
       </div>
     </div>
